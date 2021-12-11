@@ -1,0 +1,24 @@
+Package: LCVA
+Type: Package
+Title: Latent Class Models for Cause-of-Death Assignment using Verbal Autopsies
+Version: 0.1.0
+Author: Zehang Richard Li 
+Maintainer: Zehang Richard Li <lizehang@gmail.com>
+Date: 2021-12-01
+Description: This package implements the nested latent class model for cause-of-death assignment using verbal autopsy data.
+Depends:
+  R(>= 4.0.0)
+Imports:
+  Rcpp (>= 1.0.7),
+  RcppArmadillo(>= 0.8.300.1.0),
+  stats(>= 3.4.1),
+  methods
+Suggests: 
+  knitr, 
+  rmarkdown
+License: GPL (>= 2)
+Encoding: UTF-8
+LazyData: true
+VignetteBuilder: knitr
+RoxygenNote: 7.1.1
+LinkingTo: Rcpp, RcppArmadillo
