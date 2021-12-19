@@ -9,7 +9,7 @@
 #' @param nchain number of MCMC chains to run.
 #' @param seed a vector of seeds to be used for each MCMC chain.
 #' @param causes.table a vector of causes-of-death labels.
-#' @param domains.table  a vector of domains labels.
+#' @param domains.table  a vector of training domains labels. Not including the target domain.
 #' @param alpha_pi Concentration parameter for the training domain CSMF prior. Default to be 1
 #' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior. Can be either a scalar or a C by p matrix. Default to be 1
 #' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior. Can be either a scalar or a C by p matrix.  Default to be 1

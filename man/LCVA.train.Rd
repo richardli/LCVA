@@ -43,7 +43,7 @@ LCVA.train(
 
 \item{causes.table}{a vector of causes-of-death labels.}
 
-\item{domains.table}{a vector of domains labels.}
+\item{domains.table}{a vector of training domains labels. Not including the target domain.}
 
 \item{alpha_pi}{Concentration parameter for the training domain CSMF prior. Default to be 1}
 
