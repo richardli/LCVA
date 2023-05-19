@@ -9,6 +9,7 @@ LCVA.pred(
   X_test,
   Y_test = NULL,
   Domain_test = NULL,
+  model = NULL,
   alpha_pi = NULL,
   alpha_eta = 1,
   Nitr = NULL,
@@ -23,6 +24,8 @@ LCVA.pred(
 \item{Y_test}{a vector of length n of the causes-of-death. It can be one of the two formats: (1) a vector of cause-of-death labels as in the training data, where NA or any labels not in the cause list is treated as unknown causes of death; (2) a numeric vector taking values from 0 to C, where C is the total number of all cause and 0 indicates unknown cause of death. Default to be NULL, which is treated as all causes unknown.}
 
 \item{Domain_test}{a vector of length n of the domain indicators, coded into 0 to G, where G is the total number of all domains and 0 indicates a new target domain. Default to be NULL, which is treated as all deaths from target domain.}
+
+\item{model}{prediction model for the new domain. Current available choices are: constant mixing weight ("C", only applicable to single domain training models), new mixing weights ("N"), domain-level mixture ("D", only applicable to multi-domain training models), domain-cause level mixture ("DC", only applicable to multi-domain training models)}
 
 \item{alpha_pi}{concentration parameter for the target domain CSMF prior. If left unspecified, it will be set to the number of training deaths per cause multiplied by 0.1.}
 
@@ -41,15 +44,22 @@ Fit the latent class model
 \examples{
 \dontrun{
 data(simLCM)
-out.train <- LCVA.train(X = simLCM$X_train, Y = simLCM$Y_train, Domain = simLCM$G_train, 
+out.train <- LCVA.train(X = simLCM$X_train, 
+             Y = simLCM$Y_train, Domain = simLCM$G_train, 
              causes.table = simLCM$causes.table, 
              domains.table = simLCM$domains.table,
-           K = 5, model = "MD", Nitr = 400, nchain = 1, seed = 1234)
-out <- LCVA.pred(fit = out.train, X_test = simLCM$X_test,  
+             K = 5, model = "M", Nitr = 400, 
+             nchain = 5, seed = 1234)
+out <- LCVA.pred(fit = out.train, X_test = simLCM$X_test, 
+                 model = "D", 
                  alpha_pi = 1, alpha_eta = .1, 
                  Burn_in_train = 200, Nitr = 200)
-summary(out)
-# Compare with the truth
+# Compare with the true fractions
+summary(out, Burn_in = 100)
 sort(table(simLCM$Y_test)/length(simLCM$Y_test), dec = TRUE)
+
+# Compare individual results
+Yhat <- get_assignment(out$Y_test, Burn_in = 100)
+sum(simLCM$Y_test == Yhat) / length(Yhat)
 }
 }

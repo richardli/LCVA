@@ -27,7 +27,8 @@ lcm_fit(
   nu_tau,
   Nitr,
   thin,
-  similarity
+  similarity,
+  sparse
 )
 }
 \arguments{
@@ -76,6 +77,8 @@ lcm_fit(
 \item{thin}{number of draws to sample per one saved.}
 
 \item{similarity}{shrinkage model for the testing domain mixing weights. Currently not used.}
+
+\item{sparse}{binary indicator of whether to encourage latent profiles to be sparse}
 }
 \description{
 Internal function to fit the nested latent class model on training data

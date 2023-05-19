@@ -33,7 +33,7 @@ LCVA.train(
 
 \item{K}{number of latent classes within each cause-of-death}
 
-\item{model}{the model to be fit. The current choice of models include Single-domain model with constant mixing weights ("S"), Single domain model with new mixing weights ("SN"), Multi-domain model with new mixing weights ("MN"), Multi-domain model with domain-level mixture ("MD"), Multi-domain model with domain-cause level mixture "MDC".}
+\item{model}{the model to be fit. The current choice of models include Single-domain ("S") or multi-domain model ("M").}
 
 \item{Nitr}{number of iterations to run in each MCMC chain.}
 
@@ -72,7 +72,7 @@ out.train <- LCVA.train(X = simLCM$X_train, Y = simLCM$Y_train,
 						Domain = simLCM$G_train, 
 			   			causes.table = simLCM$causes.table, 
 					    domains.table = simLCM$domains.table,
-						K = 5, model = "MD", Nitr = 400, nchain = 1, 
+						K = 5, model = "M", Nitr = 400, nchain = 1, 
 						seed = 1234)
 summary(out.train)
 }

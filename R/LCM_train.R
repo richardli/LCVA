@@ -4,7 +4,7 @@
 #' @param Y a vector of length n of the causes-of-death. It can be one of the two formats: (1) a vector of cause-of-death label; (2) a numeric vector taking values from 1 to C, where C is the total number of all cause. 
 #' @param Domain a vector of length n of the domain indicators, coded into 1 to G, where G is the total number of all domains.
 #' @param K number of latent classes within each cause-of-death
-#' @param model the model to be fit. The current choice of models include Single-domain model with constant mixing weights ("S"), Single domain model with new mixing weights ("SN"), Multi-domain model with new mixing weights ("MN"), Multi-domain model with domain-level mixture ("MD"), Multi-domain model with domain-cause level mixture "MDC".
+#' @param model the model to be fit. The current choice of models include Single-domain ("S") or multi-domain model ("M").
 #' @param Nitr number of iterations to run in each MCMC chain.
 #' @param nchain number of MCMC chains to run.
 #' @param seed a vector of seeds to be used for each MCMC chain.
@@ -21,6 +21,7 @@
 #' 
 #' @return a fitted object in the class of LCVA
 #' @importFrom stats median quantile sd
+#' @import RcppArmadillo
 #' @export
 #' @examples
 #' \dontrun{
@@ -29,7 +30,7 @@
 #' 						Domain = simLCM$G_train, 
 #' 			   			causes.table = simLCM$causes.table, 
 #' 					    domains.table = simLCM$domains.table,
-#' 						K = 5, model = "MD", Nitr = 400, nchain = 1, 
+#' 						K = 5, model = "M", Nitr = 400, nchain = 1, 
 #' 						seed = 1234)
 #' summary(out.train)
 #' }
@@ -38,8 +39,8 @@ LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, nchain = 1,
 					  alpha_pi = 1, a_omega = 1, b_omega = 1, 
 					  nu_phi = 1, nu_tau = 1, a_base = 1, b_base = 1){
 
-	if(is.null(model) || model %in% c("S", "SN", "MN", "MD", "MDC") == FALSE){
-		stop("'model' needs to be one of the following: S, SN, MD, MDC")
+	if(is.null(model) || model %in% c("S", "M") == FALSE){
+		stop("'model' needs to be one of the following: S, M")
 	}
 
 	if(is.null(causes.table)){
@@ -71,19 +72,8 @@ LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, nchain = 1,
 	if(model == "S"){
 		G_train <- rep(1, length(Domain))
 		G.fit <- 1
-		similarity = 1
-	}else if(model == "SN"){
-		G_train <- rep(1, length(Domain))
-		G.fit <- 1
-		similarity = 0
-	}else if(model == "MN"){
-		similarity = 0
-	}else if(model == "MD"){
-		similarity = 1
-	}else if(model == "MDC"){
-		similarity = 2
 	}
-
+	
 	if(is.null(seed)){
 		seeds <- sample(1:1e4, nchain)
 	}else if(length(seed) < nchain){
@@ -113,7 +103,7 @@ LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, nchain = 1,
 				   alpha_pi = alpha_pi, alpha_eta = 1, a_omega = a_omega, b_omega = b_omega, 
 				   nu_phi = nu_phi, nu_tau = nu_tau, 
 				   a_gamma = a_base, b_gamma = b_base, 
-				   Nitr = Nitr, thin = 1, similarity = similarity)  
+				   Nitr = Nitr, thin = 1, similarity = similarity, sparse = 1)  
 		t1 <- Sys.time()
 		print(t1 - t0)
 		out.train$time <- t1 - t0

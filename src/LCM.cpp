@@ -194,6 +194,7 @@ arma::vec sample_Dirichlet(arma::vec &a){
 //' @param Nitr number of iterations to run in each MCMC chain.
 //' @param thin number of draws to sample per one saved.
 //' @param similarity shrinkage model for the testing domain mixing weights. Currently not used.
+//' @param sparse binary indicator of whether to encourage latent profiles to be sparse
 //' 
 //' @examples
 //' message("See ?LCVA.train")
@@ -203,7 +204,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
          int N_train, int N_test, int S, int C, int K, int G, 
          double alpha_pi, double alpha_eta, double a_omega, double b_omega, 
          double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, 
-         int Nitr, int thin, int similarity) {
+         int Nitr, int thin, int similarity, int sparse) {
 
     // organize input
     arma::mat X1 = as<mat>(X);
@@ -273,6 +274,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     arma::cube eta_out(Nout, G, C);
     arma::cube pi_out(Nout, C, G);
     arma::mat pi_test_out(Nout, C);
+    arma::mat loglik(Nout, N_train);
     // arma::vec omega_U_out(Nout);
     // arma::vec omega_W_out(Nout);
     List phi_out, gamma_out, lambda_out, lambda_test_out;  
@@ -291,12 +293,12 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     arma::mat n_g_latent(G, C); 
 
     int itr, itr_save, i, j, c, k, l, g, zy, itr_tmp;
-    int itr_show = 1000;
-    if(Nitr < 2001) itr_show = 500;
-    if(Nitr < 1001) itr_show = 200;
-    if(Nitr < 501) itr_show = 100;
+    int itr_show = 500;
+    if(Nitr < 2001) itr_show = 200;
+    if(Nitr < 1001) itr_show = 100;
     arma::vec pz(K), pg(G), py(C), probrs(3);
     arma::mat pzg(K, G);
+    arma::mat pyg(C, K);
     arma::mat pzyg(C*K, G);
     arma::cube px(N_test, C, K);
     arma::vec index2(2);
@@ -464,13 +466,36 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 for(k = 0; k < K; k++){
                     pz(k) = lambda(Y1(i), k, G1(i));
                 }
+                pyg.zeros();
                 for(j = 0; j < S; j++){
                     if(!ISNA(X1(i, j))){
-                        for(k = 0; k < K; k++){
-                            pz(k) += logphi(Y1(i), k, j)*X1(i, j);
-                            pz(k) += log_1_minus_phi(Y1(i), k, j) * (1-X1(i, j));
-                        }
+                        pyg += X1(i, j) * logphi.slice(j) + (1 - X1(i, j)) * log_1_minus_phi.slice(j);
                     }
+                }
+                // for(j = 0; j < S; j++){
+                //     if(!ISNA(X1(i, j))){
+                //         for(k = 0; k < K; k++){
+                //             pz(k) += logphi(Y1(i), k, j)*X1(i, j);
+                //             pz(k) += log_1_minus_phi(Y1(i), k, j) * (1-X1(i, j));
+                //         }
+                //     }
+                // }
+
+                // compute log likelihood
+                py.zeros();
+                tmp = 0;
+                for(c = 0; c < C; c++){
+                    for(k = 0; k < K; k++){
+                        py(c) += exp(lambda(c, k, G1(i)) + pyg(c, k));
+                    }
+                    py(c) *= pi(c, G1(i));
+                    tmp += py(c);
+                }
+                loglik(itr_save, i) = log(py(Y1(i))) - log(tmp);
+
+                // sample Z
+                for(k = 0; k < K; k++){
+                    pz(k) += pyg(Y1(i), k);
                 }
                 Z1(i) = sample_log_prob(pz);
                 n_ck(Y1(i), Z1(i)) += 1;
@@ -719,16 +744,20 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 tmp = 0;  
                 for(k = 0; k < K; k++){
                     for(j = 0; j < S; j++){
-                        tmp0 = log(1 - tau(c)) + 
-                               log(gamma(c, j)) * n_ckj_1(c,k,j) +  
-                               log(1-gamma(c, j)) * n_ckj_0(c,k,j) + 
-                               lgamma(1) + lgamma(nu_phi) - lgamma(1 + nu_phi);
-                        tmp1 = log(tau(c)) + 
-                               lgamma(1 + n_ckj_1(c,k,j)) +
-                               lgamma(nu_phi + n_ckj_0(c,k,j)) - 
-                               lgamma(1 + nu_phi + n_ckj_1(c,k,j) + n_ckj_0(c,k,j));
-                        // e^x / (e^x + e^y) = 1 / (1 + e^{y - x})       
-                        delta(c, k, j) = Rcpp::rbinom(1, 1, 1 / (1 + exp(tmp0 - tmp1)))(0);
+                        if(sparse == 1){
+                            tmp0 = log(1 - tau(c)) + 
+                                   log(gamma(c, j)) * n_ckj_1(c,k,j) +  
+                                   log(1-gamma(c, j)) * n_ckj_0(c,k,j) + 
+                                   lgamma(1) + lgamma(nu_phi) - lgamma(1 + nu_phi);
+                            tmp1 = log(tau(c)) + 
+                                   lgamma(1 + n_ckj_1(c,k,j)) +
+                                   lgamma(nu_phi + n_ckj_0(c,k,j)) - 
+                                   lgamma(1 + nu_phi + n_ckj_1(c,k,j) + n_ckj_0(c,k,j));
+                            // e^x / (e^x + e^y) = 1 / (1 + e^{y - x})       
+                            delta(c, k, j) = Rcpp::rbinom(1, 1, 1 / (1 + exp(tmp0 - tmp1)))(0);
+                        }else{
+                            delta(c, k, j) = 1;
+                        }
                                 // Rcout << tmp1 << tmp0 << "\n";
                                 // if(delta.has_nan()){
                                 //      Rcout << tmp0 <<" "<< tmp1 << "\n";
@@ -883,6 +912,39 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
 
         }
 
+
+        // // compute log likelihood
+        // for(i = 0; i < N_train; i++){
+        //     py.zeros();
+        //     pyg.zeros();
+        //     tmp = 0;
+        //     for(j = 0; j < S; j++){
+        //         if(!ISNA(X1(i, j))){
+        //             pyg += X1(i, j) * logphi.slice(j) + (1 - X1(i, j)) * log_1_minus_phi.slice(j);
+        //         }
+        //     }
+        //     for(c = 0; c < C; c++){
+        //         for(k = 0; k < K; k++){
+        //             py(c) += exp(lambda(c, k, G1(i)) + pyg(c, k));
+        //         }
+        //         // for(j = 0; j < S; j++){
+        //         //     if(!ISNA(X1(i, j))){
+        //         //         for(k = 0; k < K; k++){
+        //         //             pz(k) += logphi(c, k, j)*X1(i, j);
+        //         //             pz(k) += log_1_minus_phi(c, k, j) * (1-X1(i, j));
+        //         //         }
+        //         //     }
+        //         // }
+        //         // for(k = 0; k < K; k++){
+        //         //     py(c) += exp(pz(k));
+        //         // }
+        //         py(c) *= pi(c, G1(i));
+        //         tmp += py(c);
+        //     }
+        //     loglik(itr_save, i) = log(py(Y1(i))) - log(tmp);
+        // }
+
+
         //  save results
         itrname = "itr" + std::to_string(itr_save);
         phi_out(itrname) = phi;
@@ -925,6 +987,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     out("tau") = tau_out;
     out("eta") = eta_out;
     out("pi") = pi_out;
+    out("loglik") = loglik;
     out("config") = config;
    
     if(N_test > 0){
@@ -1030,11 +1093,11 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::mat n_g_latent(G, C); 
 
     int itr_save, i, j, c, k, l, g, zy, s, itr_tmp;
-    int itr_show = 1000;
-    if(Nitr < 2001) itr_show = 500;
-    if(Nitr < 1001) itr_show = 200;
-    if(Nitr < 501) itr_show = 100;
+    int itr_show = 500;
+    if(Nitr < 2001) itr_show = 200;
+    if(Nitr < 1001) itr_show = 100;
     arma::vec pz(K), pg(G), py(C), probrs(3);
+    arma::mat pyg(C, K);
     arma::mat pzg(K, G);
     arma::mat pzyg(C*K, G);
     // arma::cube px(N_test, C, K);
@@ -1138,16 +1201,22 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                         }
                     }
                 }
+                pyg.zeros();
                 for(j = 0; j < S; j++){
                     if(!ISNA(X0(i, j))){
-                        for(c = 0; c < C; c++){
-                            for(k = 0; k < K; k++){
-                                pzyg.row(k * C + c) += logphi(c, k, j)*X0(i, j);
-                                pzyg.row(k * C + c) += log_1_minus_phi(c, k, j) * (1-X0(i, j));
-                            }
-                        }
+                        pyg += X0(i, j) * logphi.slice(j) + (1 - X0(i, j)) * log_1_minus_phi.slice(j);
                     }
                 }
+                for(c = 0; c < C; c++){
+                    for(k = 0; k < K; k++){
+                        pzyg.row(k * C + c) += pyg(c, k);
+                        // pzyg.row(k * C + c) += logphi(c, k, j)*X0(i, j);
+                        // pzyg.row(k * C + c) += log_1_minus_phi(c, k, j) * (1-X0(i, j));
+                    }
+                }
+                    
+                
+                
                 index2.zeros();
                 if(G0(i) < 0 && similarity >= 1){
                     index2 = sample_log_prob_matrix(pzyg);

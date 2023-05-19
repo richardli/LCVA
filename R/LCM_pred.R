@@ -4,6 +4,7 @@
 #' @param X_test a n by p matrix of the symptoms with 0 being absent, 1 being present, and NA being missing.
 #' @param Y_test a vector of length n of the causes-of-death. It can be one of the two formats: (1) a vector of cause-of-death labels as in the training data, where NA or any labels not in the cause list is treated as unknown causes of death; (2) a numeric vector taking values from 0 to C, where C is the total number of all cause and 0 indicates unknown cause of death. Default to be NULL, which is treated as all causes unknown.
 #' @param Domain_test a vector of length n of the domain indicators, coded into 0 to G, where G is the total number of all domains and 0 indicates a new target domain. Default to be NULL, which is treated as all deaths from target domain.
+#' @param model prediction model for the new domain. Current available choices are: constant mixing weight ("C", only applicable to single domain training models), new mixing weights ("N"), domain-level mixture ("D", only applicable to multi-domain training models), domain-cause level mixture ("DC", only applicable to multi-domain training models)
 #' @param alpha_pi concentration parameter for the target domain CSMF prior. If left unspecified, it will be set to the number of training deaths per cause multiplied by 0.1.
 #' @param alpha_eta concentration parameter for the domain or domain-cause mixture prior. Only used for multi-domain models. Default to be 1.
 #' @param Nitr number of posterior draws to save. If set to NULL, it will be set to the total number of training MCMC samples.
@@ -14,30 +15,50 @@
 #' @examples
 #' \dontrun{
 #' data(simLCM)
-#' out.train <- LCVA.train(X = simLCM$X_train, Y = simLCM$Y_train, Domain = simLCM$G_train, 
+#' out.train <- LCVA.train(X = simLCM$X_train, 
+#'              Y = simLCM$Y_train, Domain = simLCM$G_train, 
 #'              causes.table = simLCM$causes.table, 
 #'              domains.table = simLCM$domains.table,
-#'            K = 5, model = "MD", Nitr = 400, nchain = 1, seed = 1234)
-#' out <- LCVA.pred(fit = out.train, X_test = simLCM$X_test,  
+#'              K = 5, model = "M", Nitr = 400, 
+#'              nchain = 5, seed = 1234)
+#' out <- LCVA.pred(fit = out.train, X_test = simLCM$X_test, 
+#'                  model = "D", 
 #'                  alpha_pi = 1, alpha_eta = .1, 
 #'                  Burn_in_train = 200, Nitr = 200)
-#' summary(out)
-#' # Compare with the truth
+#' # Compare with the true fractions
+#' summary(out, Burn_in = 100)
 #' sort(table(simLCM$Y_test)/length(simLCM$Y_test), dec = TRUE)
+#'
+#' # Compare individual results
+#' Yhat <- get_assignment(out$Y_test, Burn_in = 100)
+#' sum(simLCM$Y_test == Yhat) / length(Yhat)
 #' }
 
 LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL, 
+                      model = NULL,
                       alpha_pi = NULL, alpha_eta = 1, 
                       Nitr = NULL, Burn_in_train = NULL){
 
   if(!methods::is(fit, "LCVA")){
     stop("The argument 'fit' needs to be of class LCVA.")
   }
+  if(fit[[1]]$model == "M" && model == "C"){
+    stop("model = 'C' is only compatible with single domain models, i.e., LCVA.train(model = 'S')")
+  }
+  if(fit[[1]]$model == "S" && model == "D"){
+    stop("model = 'D' is only compatible with multi-domain models, i.e., LCVA.train(model = 'M')")
+  }
+  if(fit[[1]]$model == "S" && model == "DC"){
+    stop("model = 'DC' is only compatible with multi-domain models, i.e., LCVA.train(model = 'M')")
+  }
 
   if(!is.null(Y_test) && !is(Y_test, "numeric")){
     Y_test <- match(Y_test, fit[[1]]$causes.table)
     Y_test[is.na(Y_test)] <- 0
+  }else if(!is.null(Y_test)){
+    Y_test[is.na(Y_test)] <- 0    
   }
+
 
   if(is.null(Burn_in_train)) Burn_in_train <- round(fit[[1]]$Nitr / 2)
 
@@ -52,14 +73,28 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
   }else{
     config <- fit[[1]]$config
   }
- 
   
-  Nitr.train <- length(fit[[1]]$loglambda) 
+  if(length(fit) > 1){
+      Nitr.train <- length(fit[[1]]$loglambda) 
+      sub <- (Burn_in_train + 1) : Nitr.train
+      loglik <- array(NA, dim = c(length(sub), length(fit), dim(fit[[1]]$loglik)[2]))
+      for(j in 1:dim(loglik)[2]){
+          loglik[, j, ] <- fit[[j]]$loglik[sub, ] 
+      }
+      resample_model <- chain_stack(log_lik_mat = loglik, seed = 1, nsample = Nitr)
+      resample <- resample_model$draws
+      print("Number of posterior draws from each chain:")
+      print(resample)    
+  }else{
+    resample <- Nitr
+  }
+
   loglambda <- phi <- gamma <- NULL
-  pi_fit <- array(NA, dim = c(length(fit) * (Nitr.train - Burn_in_train), dim(fit[[1]]$pi)[2], dim(fit[[1]]$pi)[3]))
+  pi_fit <- array(NA, dim = c(sum(resample), dim(fit[[1]]$pi)[2], dim(fit[[1]]$pi)[3]))
   counter <- 0
   for(i in 1:length(fit)){
-    for(j in (Burn_in_train + 1):Nitr.train){
+    tmp <- sample(c(Burn_in_train + 1): Nitr.train, resample[i], replace = TRUE)
+    for(j in tmp){
       counter <- counter + 1
       loglambda[[counter]] <- fit[[i]]$loglambda[[j]]
       phi[[counter]] <- fit[[i]]$phi[[j]]
@@ -68,13 +103,11 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
     }
   }
   
-  if(is.null(Nitr)) Nitr <- counter
-  with.replacement <- Nitr < counter
-  itr_draws <- sample(1:counter, Nitr, replace = with.replacement) - 1
+  itr_draws <- sample(1:Nitr) - 1
 
 
   if(is.null(alpha_pi)){
-    alpha_pi <- length(Y_test) / fit[[1]]$C * .1
+    alpha_pi <- 1 #length(Y_test) / fit[[1]]$C * .1
   }
   if(length(alpha_pi) == 1){
     alpha_pi <- rep(alpha_pi, fit[[1]]$C)
@@ -95,6 +128,16 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
   #    csmf0 <- csmf0 / sum(csmf0) * fit[[1]]$C
   # }
 
+  # for model = N
+  similarity = 0
+  if(model == "C"){
+    similarity = 1
+  }else if(model == "D"){
+    similarity = 1
+  }else if(model == "DC"){
+    similarity = 2
+  }
+  t0 <- Sys.time()
   out <- lcm_pred(
             X_test = X_test, 
             Y_test = Y_test, 
@@ -116,17 +159,21 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
             pi_init = pi_init,
             Nitr = Nitr, 
             # Burn_in = 0,
-            similarity = fit[[1]]$similarity) 
+            similarity = similarity) 
+  t1 <- Sys.time()
   
   out$phi <- phi
   out$loglambda <- loglambda
   out$gamma <- gamma 
   out$causes.table <- fit[[1]]$causes.table
   out$domains.table <- fit[[1]]$domains.table
-  out$model <- fit[[1]]$model
+  out$model.train <- fit[[1]]$model
+  out$model.test <- model
   out$Nitr <- Nitr 
   out$Nitr.train <- Nitr.train
   out$Ntrain <- length(fit)
+  out$time <- t1 - t0
+
   class(out) <- "LCVA.pred"
   return(out)
 }
@@ -151,8 +198,9 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
 #' out.train <- LCVA.train(X = simLCM$X_train, Y = simLCM$Y_train, Domain = simLCM$G_train, 
 #'              causes.table = simLCM$causes.table, 
 #'              domains.table = simLCM$domains.table,
-#'            K = 5, model = "MD", Nitr = 400, nchain = 1, seed = 1234)
+#'            K = 5, model = "M", Nitr = 400, nchain = 1, seed = 1234)
 #' out <- LCVA.pred(fit = out.train, X_test = simLCM$X_test,  
+#'                  model = "D",
 #'                  alpha_pi = 1, alpha_eta = .1, 
 #'                  Burn_in_train = 200, Nitr = 200)
 #' summary(out)
@@ -168,8 +216,8 @@ summary.LCVA.pred <- function(object, CI = 0.95, Burn_in = NULL, top = 5, ...){
   G <- object$G
   Nitr <- object$Nitr
   Nitr.train <- object$Nitr.train
-  Model <- object$model # c("S", "SN", "MN", "MD", "MDC")
-  if(Model == "S"){
+  Model <- paste0(object$model.train, object$model.test) # c("SC", "SN", "MN", "MD", "MDC")
+  if(Model == "SC"){
     Model <- "Single-domain model with constant mixing weight"
   }else if(Model == "SN"){
     Model <- "Single-domain model with new mixing weight"

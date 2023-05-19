@@ -26,8 +26,9 @@ data(simLCM)
 out.train <- LCVA.train(X = simLCM$X_train, Y = simLCM$Y_train, Domain = simLCM$G_train, 
              causes.table = simLCM$causes.table, 
              domains.table = simLCM$domains.table,
-           K = 5, model = "MD", Nitr = 400, nchain = 1, seed = 1234)
+           K = 5, model = "M", Nitr = 400, nchain = 1, seed = 1234)
 out <- LCVA.pred(fit = out.train, X_test = simLCM$X_test,  
+                 model = "D",
                  alpha_pi = 1, alpha_eta = .1, 
                  Burn_in_train = 200, Nitr = 200)
 summary(out)

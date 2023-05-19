@@ -127,11 +127,12 @@ sample_Dirichlet <- function(a) {
 #' @param Nitr number of iterations to run in each MCMC chain.
 #' @param thin number of draws to sample per one saved.
 #' @param similarity shrinkage model for the testing domain mixing weights. Currently not used.
+#' @param sparse binary indicator of whether to encourage latent profiles to be sparse
 #' 
 #' @examples
 #' message("See ?LCVA.train")
-lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity) {
-    .Call('_LCVA_lcm_fit', PACKAGE = 'LCVA', X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity)
+lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse) {
+    .Call('_LCVA_lcm_fit', PACKAGE = 'LCVA', X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse)
 }
 
 #' Internal function to predict with the nested latent class model

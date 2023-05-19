@@ -79,8 +79,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // lcm_fit
-SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group, SEXP X_test, SEXP Y_test, SEXP Group_test, int N_train, int N_test, int S, int C, int K, int G, double alpha_pi, double alpha_eta, double a_omega, double b_omega, double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, int Nitr, int thin, int similarity);
-RcppExport SEXP _LCVA_lcm_fit(SEXP XSEXP, SEXP YSEXP, SEXP GroupSEXP, SEXP X_testSEXP, SEXP Y_testSEXP, SEXP Group_testSEXP, SEXP N_trainSEXP, SEXP N_testSEXP, SEXP SSEXP, SEXP CSEXP, SEXP KSEXP, SEXP GSEXP, SEXP alpha_piSEXP, SEXP alpha_etaSEXP, SEXP a_omegaSEXP, SEXP b_omegaSEXP, SEXP nu_phiSEXP, SEXP a_gammaSEXP, SEXP b_gammaSEXP, SEXP nu_tauSEXP, SEXP NitrSEXP, SEXP thinSEXP, SEXP similaritySEXP) {
+SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group, SEXP X_test, SEXP Y_test, SEXP Group_test, int N_train, int N_test, int S, int C, int K, int G, double alpha_pi, double alpha_eta, double a_omega, double b_omega, double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, int Nitr, int thin, int similarity, int sparse);
+RcppExport SEXP _LCVA_lcm_fit(SEXP XSEXP, SEXP YSEXP, SEXP GroupSEXP, SEXP X_testSEXP, SEXP Y_testSEXP, SEXP Group_testSEXP, SEXP N_trainSEXP, SEXP N_testSEXP, SEXP SSEXP, SEXP CSEXP, SEXP KSEXP, SEXP GSEXP, SEXP alpha_piSEXP, SEXP alpha_etaSEXP, SEXP a_omegaSEXP, SEXP b_omegaSEXP, SEXP nu_phiSEXP, SEXP a_gammaSEXP, SEXP b_gammaSEXP, SEXP nu_tauSEXP, SEXP NitrSEXP, SEXP thinSEXP, SEXP similaritySEXP, SEXP sparseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -107,7 +107,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type Nitr(NitrSEXP);
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
     Rcpp::traits::input_parameter< int >::type similarity(similaritySEXP);
-    rcpp_result_gen = Rcpp::wrap(lcm_fit(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity));
+    Rcpp::traits::input_parameter< int >::type sparse(sparseSEXP);
+    rcpp_result_gen = Rcpp::wrap(lcm_fit(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -149,7 +150,7 @@ static const R_CallMethodDef CallEntries[] = {
     {"_LCVA_sample_log_prob_matrix", (DL_FUNC) &_LCVA_sample_log_prob_matrix, 1},
     {"_LCVA_sample_prob", (DL_FUNC) &_LCVA_sample_prob, 1},
     {"_LCVA_sample_Dirichlet", (DL_FUNC) &_LCVA_sample_Dirichlet, 1},
-    {"_LCVA_lcm_fit", (DL_FUNC) &_LCVA_lcm_fit, 23},
+    {"_LCVA_lcm_fit", (DL_FUNC) &_LCVA_lcm_fit, 24},
     {"_LCVA_lcm_pred", (DL_FUNC) &_LCVA_lcm_pred, 20},
     {NULL, NULL, 0}
 };
