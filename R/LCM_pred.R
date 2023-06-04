@@ -73,6 +73,13 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
   }else{
     config <- fit[[1]]$config
   }
+
+  if(length(fit) > 1 & model == "N"){
+    fit0 <- fit 
+    fit <- NULL 
+    fit[[1]] <- fit0[[1]]
+    message("Single domain model with new weights fitted, only the first MCMC chain is used.")
+  } 
   
   if(length(fit) > 1){
       Nitr.train <- length(fit[[1]]$loglambda) 
@@ -87,6 +94,7 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
       print(resample)    
   }else{
     resample <- Nitr
+    Nitr.train <- length(fit[[1]]$loglambda) 
   }
 
   loglambda <- phi <- gamma <- NULL
