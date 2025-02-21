@@ -24,7 +24,8 @@ lcm_pred(
   pi_fit,
   pi_init,
   Nitr,
-  similarity
+  similarity,
+  return_x_given_y
 )
 }
 \arguments{

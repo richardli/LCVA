@@ -13,7 +13,8 @@ LCVA.pred(
   alpha_pi = NULL,
   alpha_eta = 1,
   Nitr = NULL,
-  Burn_in_train = NULL
+  Burn_in_train = NULL,
+  return_likelihood = FALSE
 )
 }
 \arguments{
