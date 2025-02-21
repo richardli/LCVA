@@ -1039,7 +1039,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
          int N_test, int S, int C, int K, int G, SEXP itr_draws,
          SEXP alpha_pi_vec, double alpha_eta, double a_omega, double b_omega, 
          arma::field<arma::cube> lambda_fit, arma::field<arma::cube> phi_fit, arma::cube pi_fit, SEXP pi_init,
-         int Nitr, int similarity) {
+         int Nitr, int similarity, int return_x_given_y) {
   
     arma::mat X0 = as<mat>(X_test);
     arma::vec Y0 = as<vec>(Y_test);
@@ -1077,6 +1077,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::mat G_latent_out(Nout, N_test);
     arma::cube eta_out(Nout, G, C);
     arma::mat pi_test_out(Nout, C);
+    arma::cube x_given_y_out(Nout, N_test, C);
     List lambda_test_out;  
 
     // count arrays
@@ -1102,7 +1103,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::mat pzyg(C*K, G);
     // arma::cube px(N_test, C, K);
     arma::vec index2(2);
-    double sumV, sumN, sumlambda;
+    double sumV, sumN, sumlambda, lambda_ck;
     double tol = 0.000001;
 
     arma::vec Y0_known(N_test);
@@ -1234,6 +1235,39 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                 if(G0(i) < 0 && similarity >= 1){
                     G_latent(i) = index2(1);
                     n_g_latent(G_latent(i), Y0(i)) ++;
+                }
+                if(return_x_given_y){
+                    // First extract the right lambda_{c, k}
+                    // The X|Y probability is 
+                    //    \sum_k lambda_{c, k} * P(X | Y = c, Z = k) 
+                    //  = \sum_k lambda_{c, k} * pyg(c, k)
+                    // in the first case, lambda_{ck} = \sum \lambda_{ckg} * eta(gc)
+                    if(G0(i) < 0 && similarity >= 1){
+                        for(c = 0; c < C; c++){
+                            x_given_y_out(itr_save, i, c) = 0;
+                            lambda_ck = 0;
+                            for(k = 0; k < K; k++){
+                                for(g = 0; g < G; g++){
+                                    lambda_ck += exp(lambda(c, k, g) + logeta(g, c));
+                                }
+                                x_given_y_out(itr_save, i, c) += lambda_ck * exp(pyg(c, k));
+                            }
+                        }
+                    }else if(G0(i) < 0 && similarity == 0){
+                        for(c = 0; c < C; c++){
+                            x_given_y_out(itr_save, i, c) = 0;
+                            for(k = 0; k < K; k++){
+                                x_given_y_out(itr_save, i, c) += exp(pyg(c, k) + lambda_test(c, k));
+                            }
+                        }
+                    }else{
+                        for(c = 0; c < C; c++){
+                            x_given_y_out(itr_save, i, c) = 0;
+                            for(k = 0; k < K; k++){
+                                x_given_y_out(itr_save, i, c) += exp(pyg(c, k) + lambda(c, k, G0(i)));
+                            }
+                        }
+                    }
                 }
             }else{
                 pzg.zeros();
@@ -1402,6 +1436,9 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
         out("alpha_pi") = alpha_pi;
         if(similarity == 0){
             out("loglambda_test") = lambda_test_out;
+        }
+        if(return_x_given_y == 1){
+            out("x_given_y_prob") = x_given_y_out;
         }
      }
   return out;

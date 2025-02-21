@@ -37,7 +37,7 @@
 LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL, 
                       model = NULL,
                       alpha_pi = NULL, alpha_eta = 1, 
-                      Nitr = NULL, Burn_in_train = NULL){
+                      Nitr = NULL, Burn_in_train = NULL, return_likelihood = FALSE){
 
   if(!methods::is(fit, "LCVA")){
     stop("The argument 'fit' needs to be of class LCVA.")
@@ -167,7 +167,8 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
             pi_init = pi_init,
             Nitr = Nitr, 
             # Burn_in = 0,
-            similarity = similarity) 
+            similarity = similarity, 
+            return_x_given_y = as.integer(return_likelihood)) 
   t1 <- Sys.time()
   
   out$phi <- phi
