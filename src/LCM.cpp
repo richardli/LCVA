@@ -442,7 +442,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
         // Rcout << ".";
         itr_tmp = (itr_save + 1) % itr_show;
         if(itr_tmp == 0){
-          itr_tmp = itr_save * thin + 1;
+          itr_tmp = (itr_save + 1) * thin;
           Rcout << "Iteration " << itr_tmp << " completed.\n";
         }
 

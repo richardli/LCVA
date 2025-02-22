@@ -5,7 +5,8 @@
 #' @param Domain a vector of length n of the domain indicators, coded into 1 to G, where G is the total number of all domains.
 #' @param K number of latent classes within each cause-of-death
 #' @param model the model to be fit. The current choice of models include Single-domain ("S") or multi-domain model ("M").
-#' @param Nitr number of iterations to run in each MCMC chain.
+#' @param Nitr number of iterations to save in each MCMC chain. Nitr * thin iterations of MCMC will be run
+#' @param thin the number of iterations to thin when saving the MCMC draws
 #' @param nchain number of MCMC chains to run.
 #' @param seed a vector of seeds to be used for each MCMC chain.
 #' @param causes.table a vector of causes-of-death labels.
@@ -34,7 +35,7 @@
 #' 						seed = 1234)
 #' summary(out.train)
 #' }
-LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, nchain = 1, 
+LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, thin = 1, nchain = 1, 
 					  seed = NULL, causes.table = NULL, domains.table = NULL, 
 					  alpha_pi = 1, a_omega = 1, b_omega = 1, 
 					  nu_phi = 1, nu_tau = 1, a_base = 1, b_base = 1){
@@ -103,7 +104,7 @@ LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, nchain = 1,
 				   alpha_pi = alpha_pi, alpha_eta = 1, a_omega = a_omega, b_omega = b_omega, 
 				   nu_phi = nu_phi, nu_tau = nu_tau, 
 				   a_gamma = a_base, b_gamma = b_base, 
-				   Nitr = Nitr, thin = 1, similarity = similarity, sparse = 1)  
+				   Nitr = Nitr, thin = thin, similarity = similarity, sparse = 1)  
 		t1 <- Sys.time()
 		print(t1 - t0)
 		out.train$time <- t1 - t0

@@ -11,6 +11,7 @@ LCVA.train(
   K,
   model = NULL,
   Nitr = 4000,
+  thin = 1,
   nchain = 1,
   seed = NULL,
   causes.table = NULL,
@@ -35,7 +36,9 @@ LCVA.train(
 
 \item{model}{the model to be fit. The current choice of models include Single-domain ("S") or multi-domain model ("M").}
 
-\item{Nitr}{number of iterations to run in each MCMC chain.}
+\item{Nitr}{number of iterations to save in each MCMC chain. Nitr * thin iterations of MCMC will be run}
+
+\item{thin}{the number of iterations to thin when saving the MCMC draws}
 
 \item{nchain}{number of MCMC chains to run.}
 
