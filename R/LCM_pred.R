@@ -9,6 +9,7 @@
 #' @param alpha_eta concentration parameter for the domain or domain-cause mixture prior. Only used for multi-domain models. Default to be 1.
 #' @param Nitr number of posterior draws to save. If set to NULL, it will be set to the total number of training MCMC samples.
 #' @param Burn_in_train number of posterior draws to discard as burn-in in each training chain. If set to NULL, first half of each training chain will be discarded. 
+#' @param return_likelihood whether the P(X|Y) is returned for each of the unlabeled observations. If this is set to TRUE, the result will contain an array of posterior draws of size Nitr * N * C array of P(X_i | Y = c) for i = 1, ..., N, and c = 1, ..., C.  
 #' 
 #' @return a fitted object in the class of LCVA.pred
 #' @importFrom methods is
@@ -172,7 +173,7 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
   t1 <- Sys.time()
   
   out$phi <- phi
-  out$loglambda <- loglambda
+  out$loglambda.train <- loglambda
   out$gamma <- gamma 
   out$causes.table <- fit[[1]]$causes.table
   out$domains.table <- fit[[1]]$domains.table

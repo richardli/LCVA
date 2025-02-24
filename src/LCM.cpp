@@ -1418,9 +1418,9 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
             pi_test_out.row(itr_save) = pi_test.t();   
             eta_out.row(itr_save) = eta;
         }
-        if(similarity == 0){
+        // if(similarity == 0){
             lambda_test_out(itrname) = lambda_test;
-        }
+        // }
 
     }
 
@@ -1434,9 +1434,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
         out("Y_test") = Y0_out + 1;
         out("eta") = eta_out;
         out("alpha_pi") = alpha_pi;
-        if(similarity == 0){
-            out("loglambda_test") = lambda_test_out;
-        }
+        out("loglambda") = lambda_test_out;
         if(return_x_given_y == 1){
             out("x_given_y_prob") = x_given_y_out;
         }
