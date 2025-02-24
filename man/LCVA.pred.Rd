@@ -35,6 +35,8 @@ LCVA.pred(
 \item{Nitr}{number of posterior draws to save. If set to NULL, it will be set to the total number of training MCMC samples.}
 
 \item{Burn_in_train}{number of posterior draws to discard as burn-in in each training chain. If set to NULL, first half of each training chain will be discarded.}
+
+\item{return_likelihood}{whether the P(X|Y) is returned for each of the unlabeled observations. If this is set to TRUE, the result will contain an array of posterior draws of size Nitr * N * C array of P(X_i | Y = c) for i = 1, ..., N, and c = 1, ..., C.}
 }
 \value{
 a fitted object in the class of LCVA.pred
