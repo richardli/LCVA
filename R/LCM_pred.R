@@ -228,17 +228,15 @@ summary.LCVA.pred <- function(object, CI = 0.95, Burn_in = NULL, top = 5, ...){
   G <- object$G
   Nitr <- object$Nitr
   Nitr.train <- object$Nitr.train
-  Model <- paste0(object$model.train, object$model.test) # c("SC", "SN", "MN", "MD", "MDC")
-  if(Model == "SC"){
-    Model <- "Single-domain model with constant mixing weight"
-  }else if(Model == "SN"){
-    Model <- "Single-domain model with new mixing weight"
-  }else if(Model == "MN"){
-    Model <- "Multi-domain model with new mixing weight"
-  }else if(Model == "MD"){
-    Model <- "Multi-domain model with domain-level mixture"   
-  }else if(Model == "MDC"){
-    Model <- "Multi-domain model with domain-cause-level mixture"
+  Model <- object$model.test # c("SC", "SN", "MN", "MD", "MDC")
+  if(Model == "C"){
+    Model <- "Constant mixing weight in target domain"
+  }else if(Model == "N"){
+    Model <- "New independent mixing weight in target domain"
+  }else if(Model == "D"){
+    Model <- "Domain-level mixture of mixing weights in target domain"   
+  }else if(Model == "DC"){
+    Model <- "Domain-cause-level mixture of mixing weights in target domain"
   } 
 
   if(is.null(Burn_in)) Burn_in <- round(Nitr / 2)
@@ -256,7 +254,7 @@ summary.LCVA.pred <- function(object, CI = 0.95, Burn_in = NULL, top = 5, ...){
   cat("----------------------------------\n")
   cat(Model)
   cat("\nModel trained on ")
-  cat(G)
+  cat(length(out$domains.table))
   cat(" domains\n")  
   cat(nchain)
   cat(" chain(s) constructed\n") 

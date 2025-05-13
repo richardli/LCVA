@@ -156,15 +156,9 @@ summary.LCVA <- function(object,...){
 	Nitr <- object[[1]]$Nitr
 	Model <- object[[1]]$model # c("S", "SN", "MN", "MD", "MDC")
 	if(Model == "S"){
-		Model <- "Single-domain model with constant mixing weight"
-	}else if(Model == "SN"){
-		Model <- "Single-domain model with new mixing weight"
-	}else if(Model == "MN"){
-		Model <- "Multi-domain model with new mixing weight"
-	}else if(Model == "MD"){
-		Model <- "Multi-domain model with domain-level mixture"		
-	}else if(Model == "MDC"){
-		Model <- "Multi-domain model with domain-cause-level mixture"
+		Model <- "Single-domain model"
+	}else if(Model == "M"){
+		Model <- "Multi-domain model"
 	} 
 
 	cat("----------------------------------\n")
