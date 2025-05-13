@@ -10,6 +10,7 @@
 #' @param Nitr number of posterior draws to save. If set to NULL, it will be set to the total number of training MCMC samples.
 #' @param Burn_in_train number of posterior draws to discard as burn-in in each training chain. If set to NULL, first half of each training chain will be discarded. 
 #' @param return_likelihood whether the P(X|Y) is returned for each of the unlabeled observations. If this is set to TRUE, the result will contain an array of posterior draws of size Nitr * N * C array of P(X_i | Y = c) for i = 1, ..., N, and c = 1, ..., C.  
+#' @param verbose logical indicator of whether to print out the MCMC progress.
 #' 
 #' @return a fitted object in the class of LCVA.pred
 #' @importFrom methods is
@@ -38,7 +39,7 @@
 LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL, 
                       model = NULL,
                       alpha_pi = NULL, alpha_eta = 1, 
-                      Nitr = NULL, Burn_in_train = NULL, return_likelihood = FALSE){
+                      Nitr = NULL, Burn_in_train = NULL, return_likelihood = FALSE, verbose = TRUE){
 
   if(!methods::is(fit, "LCVA")){
     stop("The argument 'fit' needs to be of class LCVA.")
@@ -89,10 +90,10 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
       for(j in 1:dim(loglik)[2]){
           loglik[, j, ] <- fit[[j]]$loglik[sub, ] 
       }
-      resample_model <- chain_stack(log_lik_mat = loglik, seed = 1, nsample = Nitr)
+      resample_model <- chain_stack(log_lik_mat = loglik, seed = 1, nsample = Nitr, print_progress = TRUE)
       resample <- resample_model$draws
-      print("Number of posterior draws from each chain:")
-      print(resample)    
+       print("Number of posterior draws from each chain:")
+       print(resample)    
   }else{
     resample <- Nitr
     Nitr.train <- length(fit[[1]]$loglambda) 
@@ -169,7 +170,8 @@ LCVA.pred <- function(fit, X_test, Y_test = NULL, Domain_test = NULL,
             Nitr = Nitr, 
             # Burn_in = 0,
             similarity = similarity, 
-            return_x_given_y = as.integer(return_likelihood)) 
+            return_x_given_y = as.integer(return_likelihood),
+            verbose = as.integer(verbose)) 
   t1 <- Sys.time()
   
   out$phi <- phi

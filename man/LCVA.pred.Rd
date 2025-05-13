@@ -14,7 +14,8 @@ LCVA.pred(
   alpha_eta = 1,
   Nitr = NULL,
   Burn_in_train = NULL,
-  return_likelihood = FALSE
+  return_likelihood = FALSE,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -37,6 +38,8 @@ LCVA.pred(
 \item{Burn_in_train}{number of posterior draws to discard as burn-in in each training chain. If set to NULL, first half of each training chain will be discarded.}
 
 \item{return_likelihood}{whether the P(X|Y) is returned for each of the unlabeled observations. If this is set to TRUE, the result will contain an array of posterior draws of size Nitr * N * C array of P(X_i | Y = c) for i = 1, ..., N, and c = 1, ..., C.}
+
+\item{verbose}{logical indicator of whether to print out the MCMC progress.}
 }
 \value{
 a fitted object in the class of LCVA.pred

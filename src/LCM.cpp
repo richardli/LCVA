@@ -204,7 +204,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
          int N_train, int N_test, int S, int C, int K, int G, 
          double alpha_pi, double alpha_eta, double a_omega, double b_omega, 
          double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, 
-         int Nitr, int thin, int similarity, int sparse) {
+         int Nitr, int thin, int similarity, int sparse, int verbose) {
 
     // organize input
     arma::mat X1 = as<mat>(X);
@@ -437,11 +437,11 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
         pg = eta.col(Y0(i));
         G_latent(i) = sample_prob(pg);
     }
-    Rcout << "Start posterior sampling\n";
+    if(verbose == 1) Rcout << "Start posterior sampling\n";
     for(itr_save = 0; itr_save < Nitr; itr_save ++){
         // Rcout << ".";
         itr_tmp = (itr_save + 1) % itr_show;
-        if(itr_tmp == 0){
+        if(itr_tmp == 0 & verbose == 1){
           itr_tmp = (itr_save + 1) * thin;
           Rcout << "Iteration " << itr_tmp << " completed.\n";
         }
@@ -1039,7 +1039,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
          int N_test, int S, int C, int K, int G, SEXP itr_draws,
          SEXP alpha_pi_vec, double alpha_eta, double a_omega, double b_omega, 
          arma::field<arma::cube> lambda_fit, arma::field<arma::cube> phi_fit, arma::cube pi_fit, SEXP pi_init,
-         int Nitr, int similarity, int return_x_given_y) {
+         int Nitr, int similarity, int return_x_given_y, int verbose) {
   
     arma::mat X0 = as<mat>(X_test);
     arma::vec Y0 = as<vec>(Y_test);
@@ -1138,11 +1138,11 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
         Rcout << "lambda test has inf\n";
     }
 
-    Rcout << "Start posterior sampling\n";
+    if(verbose == 1) Rcout << "Start posterior sampling\n";
     for(itr_save = 0; itr_save < Nitr; itr_save ++){
 
         itr_tmp = (itr_save + 1) % itr_show;
-        if(itr_tmp == 0){
+        if(itr_tmp == 0 & verbose == 1){
           // itr_tmp = itr_save * thin;
           Rcout << "Iteration " << itr_save + 1 << " completed.\n";
         }

@@ -131,8 +131,8 @@ sample_Dirichlet <- function(a) {
 #' 
 #' @examples
 #' message("See ?LCVA.train")
-lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse) {
-    .Call('_LCVA_lcm_fit', PACKAGE = 'LCVA', X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse)
+lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse, verbose) {
+    .Call('_LCVA_lcm_fit', PACKAGE = 'LCVA', X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse, verbose)
 }
 
 #' Internal function to predict with the nested latent class model
@@ -160,7 +160,7 @@ lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S,
 #' 
 #' @examples
 #' message("See ?LCVA.pred")
-lcm_pred <- function(X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y) {
-    .Call('_LCVA_lcm_pred', PACKAGE = 'LCVA', X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y)
+lcm_pred <- function(X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y, verbose) {
+    .Call('_LCVA_lcm_pred', PACKAGE = 'LCVA', X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y, verbose)
 }
 

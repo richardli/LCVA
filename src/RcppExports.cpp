@@ -79,8 +79,8 @@ BEGIN_RCPP
 END_RCPP
 }
 // lcm_fit
-SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group, SEXP X_test, SEXP Y_test, SEXP Group_test, int N_train, int N_test, int S, int C, int K, int G, double alpha_pi, double alpha_eta, double a_omega, double b_omega, double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, int Nitr, int thin, int similarity, int sparse);
-RcppExport SEXP _LCVA_lcm_fit(SEXP XSEXP, SEXP YSEXP, SEXP GroupSEXP, SEXP X_testSEXP, SEXP Y_testSEXP, SEXP Group_testSEXP, SEXP N_trainSEXP, SEXP N_testSEXP, SEXP SSEXP, SEXP CSEXP, SEXP KSEXP, SEXP GSEXP, SEXP alpha_piSEXP, SEXP alpha_etaSEXP, SEXP a_omegaSEXP, SEXP b_omegaSEXP, SEXP nu_phiSEXP, SEXP a_gammaSEXP, SEXP b_gammaSEXP, SEXP nu_tauSEXP, SEXP NitrSEXP, SEXP thinSEXP, SEXP similaritySEXP, SEXP sparseSEXP) {
+SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group, SEXP X_test, SEXP Y_test, SEXP Group_test, int N_train, int N_test, int S, int C, int K, int G, double alpha_pi, double alpha_eta, double a_omega, double b_omega, double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, int Nitr, int thin, int similarity, int sparse, int verbose);
+RcppExport SEXP _LCVA_lcm_fit(SEXP XSEXP, SEXP YSEXP, SEXP GroupSEXP, SEXP X_testSEXP, SEXP Y_testSEXP, SEXP Group_testSEXP, SEXP N_trainSEXP, SEXP N_testSEXP, SEXP SSEXP, SEXP CSEXP, SEXP KSEXP, SEXP GSEXP, SEXP alpha_piSEXP, SEXP alpha_etaSEXP, SEXP a_omegaSEXP, SEXP b_omegaSEXP, SEXP nu_phiSEXP, SEXP a_gammaSEXP, SEXP b_gammaSEXP, SEXP nu_tauSEXP, SEXP NitrSEXP, SEXP thinSEXP, SEXP similaritySEXP, SEXP sparseSEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -108,13 +108,14 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type thin(thinSEXP);
     Rcpp::traits::input_parameter< int >::type similarity(similaritySEXP);
     Rcpp::traits::input_parameter< int >::type sparse(sparseSEXP);
-    rcpp_result_gen = Rcpp::wrap(lcm_fit(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse));
+    Rcpp::traits::input_parameter< int >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(lcm_fit(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse, verbose));
     return rcpp_result_gen;
 END_RCPP
 }
 // lcm_pred
-SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train, int N_test, int S, int C, int K, int G, SEXP itr_draws, SEXP alpha_pi_vec, double alpha_eta, double a_omega, double b_omega, arma::field<arma::cube> lambda_fit, arma::field<arma::cube> phi_fit, arma::cube pi_fit, SEXP pi_init, int Nitr, int similarity, int return_x_given_y);
-RcppExport SEXP _LCVA_lcm_pred(SEXP X_testSEXP, SEXP Y_testSEXP, SEXP Group_testSEXP, SEXP config_trainSEXP, SEXP N_testSEXP, SEXP SSEXP, SEXP CSEXP, SEXP KSEXP, SEXP GSEXP, SEXP itr_drawsSEXP, SEXP alpha_pi_vecSEXP, SEXP alpha_etaSEXP, SEXP a_omegaSEXP, SEXP b_omegaSEXP, SEXP lambda_fitSEXP, SEXP phi_fitSEXP, SEXP pi_fitSEXP, SEXP pi_initSEXP, SEXP NitrSEXP, SEXP similaritySEXP, SEXP return_x_given_ySEXP) {
+SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train, int N_test, int S, int C, int K, int G, SEXP itr_draws, SEXP alpha_pi_vec, double alpha_eta, double a_omega, double b_omega, arma::field<arma::cube> lambda_fit, arma::field<arma::cube> phi_fit, arma::cube pi_fit, SEXP pi_init, int Nitr, int similarity, int return_x_given_y, int verbose);
+RcppExport SEXP _LCVA_lcm_pred(SEXP X_testSEXP, SEXP Y_testSEXP, SEXP Group_testSEXP, SEXP config_trainSEXP, SEXP N_testSEXP, SEXP SSEXP, SEXP CSEXP, SEXP KSEXP, SEXP GSEXP, SEXP itr_drawsSEXP, SEXP alpha_pi_vecSEXP, SEXP alpha_etaSEXP, SEXP a_omegaSEXP, SEXP b_omegaSEXP, SEXP lambda_fitSEXP, SEXP phi_fitSEXP, SEXP pi_fitSEXP, SEXP pi_initSEXP, SEXP NitrSEXP, SEXP similaritySEXP, SEXP return_x_given_ySEXP, SEXP verboseSEXP) {
 BEGIN_RCPP
     Rcpp::RObject rcpp_result_gen;
     Rcpp::RNGScope rcpp_rngScope_gen;
@@ -139,7 +140,8 @@ BEGIN_RCPP
     Rcpp::traits::input_parameter< int >::type Nitr(NitrSEXP);
     Rcpp::traits::input_parameter< int >::type similarity(similaritySEXP);
     Rcpp::traits::input_parameter< int >::type return_x_given_y(return_x_given_ySEXP);
-    rcpp_result_gen = Rcpp::wrap(lcm_pred(X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y));
+    Rcpp::traits::input_parameter< int >::type verbose(verboseSEXP);
+    rcpp_result_gen = Rcpp::wrap(lcm_pred(X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y, verbose));
     return rcpp_result_gen;
 END_RCPP
 }
@@ -151,8 +153,8 @@ static const R_CallMethodDef CallEntries[] = {
     {"_LCVA_sample_log_prob_matrix", (DL_FUNC) &_LCVA_sample_log_prob_matrix, 1},
     {"_LCVA_sample_prob", (DL_FUNC) &_LCVA_sample_prob, 1},
     {"_LCVA_sample_Dirichlet", (DL_FUNC) &_LCVA_sample_Dirichlet, 1},
-    {"_LCVA_lcm_fit", (DL_FUNC) &_LCVA_lcm_fit, 24},
-    {"_LCVA_lcm_pred", (DL_FUNC) &_LCVA_lcm_pred, 21},
+    {"_LCVA_lcm_fit", (DL_FUNC) &_LCVA_lcm_fit, 25},
+    {"_LCVA_lcm_pred", (DL_FUNC) &_LCVA_lcm_pred, 22},
     {NULL, NULL, 0}
 };
 

@@ -22,7 +22,8 @@ LCVA.train(
   nu_phi = 1,
   nu_tau = 1,
   a_base = 1,
-  b_base = 1
+  b_base = 1,
+  verbose = TRUE
 )
 }
 \arguments{
@@ -61,6 +62,8 @@ LCVA.train(
 \item{a_base}{Shape1 parameter of the gamma prior for the baseline response probabilities. Default to be 1}
 
 \item{b_base}{Shape2 parameter of the gamma prior for the baseline response probabilities. Default to be 1}
+
+\item{verbose}{logical indicator of whether to print out the MCMC progress.}
 }
 \value{
 a fitted object in the class of LCVA

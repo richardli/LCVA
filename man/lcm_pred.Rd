@@ -25,7 +25,8 @@ lcm_pred(
   pi_init,
   Nitr,
   similarity,
-  return_x_given_y
+  return_x_given_y,
+  verbose
 )
 }
 \arguments{

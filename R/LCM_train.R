@@ -18,7 +18,7 @@
 #' @param nu_tau Shape2 parameter of the sparsity level in the response probabilities. Default to be 1
 #' @param a_base Shape1 parameter of the gamma prior for the baseline response probabilities. Default to be 1
 #' @param b_base Shape2 parameter of the gamma prior for the baseline response probabilities. Default to be 1
-
+#' @param verbose logical indicator of whether to print out the MCMC progress.
 #' 
 #' @return a fitted object in the class of LCVA
 #' @importFrom stats median quantile sd
@@ -38,7 +38,7 @@
 LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, thin = 1, nchain = 1, 
 					  seed = NULL, causes.table = NULL, domains.table = NULL, 
 					  alpha_pi = 1, a_omega = 1, b_omega = 1, 
-					  nu_phi = 1, nu_tau = 1, a_base = 1, b_base = 1){
+					  nu_phi = 1, nu_tau = 1, a_base = 1, b_base = 1, verbose = TRUE){
 
 	if(is.null(model) || model %in% c("S", "M") == FALSE){
 		stop("'model' needs to be one of the following: S, M")
@@ -104,9 +104,9 @@ LCVA.train <- function(X, Y, Domain, K, model = NULL, Nitr = 4000, thin = 1, nch
 				   alpha_pi = alpha_pi, alpha_eta = 1, a_omega = a_omega, b_omega = b_omega, 
 				   nu_phi = nu_phi, nu_tau = nu_tau, 
 				   a_gamma = a_base, b_gamma = b_base, 
-				   Nitr = Nitr, thin = thin, similarity = similarity, sparse = 1)  
+				   Nitr = Nitr, thin = thin, similarity = similarity, sparse = 1, verbose = as.integer(verbose))  
 		t1 <- Sys.time()
-		print(t1 - t0)
+		if(verbose) print(t1 - t0)
 		out.train$time <- t1 - t0
 		out.train$seed <- seed.train
 		all.train[[index]] <- out.train

@@ -28,7 +28,8 @@ lcm_fit(
   Nitr,
   thin,
   similarity,
-  sparse
+  sparse,
+  verbose
 )
 }
 \arguments{
