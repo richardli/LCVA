@@ -437,6 +437,34 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
         pg = eta.col(Y0(i));
         G_latent(i) = sample_prob(pg);
     }
+    // Precompute NA-masked copies: X1a(i,j)=X1(i,j) if observed else 0,
+    // X1b(i,j)=1-X1(i,j) if observed else 0. This lets us replace ISNA-guarded
+    // j-loops with BLAS matrix-vector products over symptoms.
+    arma::mat X1a(N_train, S, arma::fill::zeros);
+    arma::mat X1b(N_train, S, arma::fill::zeros);
+    for(i = 0; i < N_train; i++){
+        for(j = 0; j < S; j++){
+            if(!ISNA(X1(i, j))){
+                X1a(i, j) = X1(i, j);
+                X1b(i, j) = 1.0 - X1(i, j);
+            }
+        }
+    }
+    arma::mat X0a(N_test, S, arma::fill::zeros);
+    arma::mat X0b(N_test, S, arma::fill::zeros);
+    for(i = 0; i < N_test; i++){
+        for(j = 0; j < S; j++){
+            if(!ISNA(X0(i, j))){
+                X0a(i, j) = X0(i, j);
+                X0b(i, j) = 1.0 - X0(i, j);
+            }
+        }
+    }
+    // Non-owning (C*K) x S matrix views of the logphi cubes.
+    // Armadillo stores cube(C,K,S) in column-major order so element (c,k,s)
+    // is at offset c + k*C + s*C*K, matching row k*C+c of a (C*K x S) matrix.
+    // Because logphi is updated in-place each iteration (no reallocation),
+    // these views always reflect current values without any copying.
     if(verbose == 1) Rcout << "Start posterior sampling\n";
     for(itr_save = 0; itr_save < Nitr; itr_save ++){
         // Rcout << ".";
@@ -446,11 +474,11 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
           Rcout << "Iteration " << itr_tmp << " completed.\n";
         }
 
-        // 
+        //
         // Sampler starts here
-        // 
+        //
         for(itr = 0; itr < thin; itr ++){
-           
+
             // ------------------------//
             // Sample Z in training
             // ------------------------//
@@ -501,12 +529,9 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 n_ck(Y1(i), Z1(i)) += 1;
                 n_ckg(Y1(i), Z1(i), G1(i)) += 1;
                 n_cg(Y1(i), G1(i)) += 1;
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X1(i, j))){
-                        n_ckj_1(Y1(i), Z1(i), j) += X1(i, j);
-                        n_ckj_0(Y1(i), Z1(i), j) += 1-X1(i, j);
-                    }
-                }
+                // tube(c,k) returns the length-S vector n_ckj(c,k,:)
+                n_ckj_1.tube((int)Y1(i), (int)Z1(i)) += X1a.row(i).t();
+                n_ckj_0.tube((int)Y1(i), (int)Z1(i)) += X1b.row(i).t();
             }
 
 
@@ -542,16 +567,17 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                         }
                     }
 
+                    pyg.zeros();
                     for(j = 0; j < S; j++){
                         if(!ISNA(X0(i, j))){
-                            for(c = 0; c < C; c++){
-                                for(k = 0; k < K; k++){
-                                    pzyg.row(k * C + c) += logphi(c, k, j)*X0(i, j);
-                                    pzyg.row(k * C + c) += log_1_minus_phi(c, k, j) * (1-X0(i, j));
-                                    px(i, c, k) += logphi(c, k, j)*X0(i, j);
-                                    px(i, c, k) += log_1_minus_phi(c, k, j) * (1-X0(i, j));
-                                }
-                            }
+                            pyg += X0(i, j) * logphi.slice(j) + (1 - X0(i, j)) * log_1_minus_phi.slice(j);
+                        }
+                    }
+                    arma::vec pyg_vec = arma::vectorise(pyg);
+                    pzyg.each_col() += pyg_vec;
+                    for(k = 0; k < K; k++){
+                        for(c = 0; c < C; c++){
+                            px(i, c, k) += pyg_vec(k*C+c);
                         }
                     }
                     index2.zeros();
@@ -576,7 +602,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     pzg.zeros();
                     for(k = 0; k < K; k++){
                         if(G0(i) < 0 & similarity >= 1){
-                            for(g = 0; g < G; g++){    
+                            for(g = 0; g < G; g++){
                                 pzg(k, g) = lambda(Y0(i), k, g) + log(eta(g, Y0(i)));
                             }
                         }else if(G0(i) < 0 & similarity == 0){
@@ -584,12 +610,20 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                         }else{
                             pzg(k, G0(i)) = lambda(Y0(i), k, G0(i));
                         }
+                    }
+                    // Compute per-k log-likelihood scalars, then broadcast to all g at once.
+                    // This is O(K*S + K*G) vs the original O(K*S*G).
+                    {
+                        arma::vec kcontrib(K, arma::fill::zeros);
                         for(j = 0; j < S; j++){
                             if(!ISNA(X0(i, j))){
-                                pzg.row(k) += logphi(Y0(i), k, j)*X0(i, j);
-                                pzg.row(k) += log_1_minus_phi(Y0(i), k, j) * (1-X0(i, j));
+                                for(k = 0; k < K; k++){
+                                    kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
+                                                 + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
+                                }
                             }
                         }
+                        pzg.each_col() += kcontrib;
                     }
 
                     if(G0(i) < 0 & similarity >= 1){
@@ -611,13 +645,8 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     n_c_test(Y0(i)) += 1;
                 }
                 // add in test counts
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X0(i, j))){
-                        n_ckj_1(Y0(i), Z0(i), j) += X0(i, j);
-                        n_ckj_0(Y0(i), Z0(i), j) += 1-X0(i, j);
-                    }
-                }
-
+                n_ckj_1.tube((int)Y0(i), (int)Z0(i)) += X0a.row(i).t();
+                n_ckj_0.tube((int)Y0(i), (int)Z0(i)) += X0b.row(i).t();
             }
 
             // ------------------------------------------------//
@@ -783,21 +812,16 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
             n0_cj = n0_cj.zeros();
             n1_cj = n1_cj.zeros();
             for(i = 0; i < N_train; i++){
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X1(i, j))){
-                        n1_cj(Y1(i), j) += X1(i, j) * (1 - delta(Y1(i), Z1(i), j));
-                        n0_cj(Y1(i), j) += (1 - X1(i, j)) * (1 - delta(Y1(i), Z1(i), j));
-                    }
-                }
+                // (1 - delta(c,k,j)) mask across all j for this observation's (c,k) pair
+                arma::vec delta_fac = 1.0 - delta.tube((int)Y1(i), (int)Z1(i));
+                n1_cj.row((int)Y1(i)) += X1a.row(i) % delta_fac.t();
+                n0_cj.row((int)Y1(i)) += X1b.row(i) % delta_fac.t();
             }
             // add in test counts
-             for(i = 0; i < N_test; i++){
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X0(i, j))){
-                        n1_cj(Y0(i), j) += X0(i, j) * (1 - delta(Y0(i), Z0(i), j));
-                        n0_cj(Y0(i), j) += (1 - X0(i, j)) * (1 - delta(Y0(i), Z0(i), j));
-                    }
-                }
+            for(i = 0; i < N_test; i++){
+                arma::vec delta_fac = 1.0 - delta.tube((int)Y0(i), (int)Z0(i));
+                n1_cj.row((int)Y0(i)) += X0a.row(i) % delta_fac.t();
+                n0_cj.row((int)Y0(i)) += X0b.row(i) % delta_fac.t();
             }
 
 
@@ -1138,6 +1162,18 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
         Rcout << "lambda test has inf\n";
     }
 
+    // Precompute NA-masked copies for vectorized symptom summation
+    arma::mat X0a(N_test, S, arma::fill::zeros);
+    arma::mat X0b(N_test, S, arma::fill::zeros);
+    for(i = 0; i < N_test; i++){
+        for(j = 0; j < S; j++){
+            if(!ISNA(X0(i, j))){
+                X0a(i, j) = X0(i, j);
+                X0b(i, j) = 1.0 - X0(i, j);
+            }
+        }
+    }
+
     if(verbose == 1) Rcout << "Start posterior sampling\n";
     for(itr_save = 0; itr_save < Nitr; itr_save ++){
 
@@ -1208,13 +1244,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                         pyg += X0(i, j) * logphi.slice(j) + (1 - X0(i, j)) * log_1_minus_phi.slice(j);
                     }
                 }
-                for(c = 0; c < C; c++){
-                    for(k = 0; k < K; k++){
-                        pzyg.row(k * C + c) += pyg(c, k);
-                        // pzyg.row(k * C + c) += logphi(c, k, j)*X0(i, j);
-                        // pzyg.row(k * C + c) += log_1_minus_phi(c, k, j) * (1-X0(i, j));
-                    }
-                }
+                pzyg.each_col() += arma::vectorise(pyg);
                     
                 
                 
@@ -1273,7 +1303,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                 pzg.zeros();
                 for(k = 0; k < K; k++){
                     if(G0(i) < 0 & similarity >= 1){
-                        for(g = 0; g < G; g++){    
+                        for(g = 0; g < G; g++){
                             pzg(k, g) = lambda(Y0(i), k, g) + logeta(g, Y0(i));
                         }
                     }else if(G0(i) < 0 & similarity == 0){
@@ -1281,12 +1311,18 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     }else{
                         pzg(k, G0(i)) = lambda(Y0(i), k, G0(i));
                     }
+                }
+                {
+                    arma::vec kcontrib(K, arma::fill::zeros);
                     for(j = 0; j < S; j++){
                         if(!ISNA(X0(i, j))){
-                            pzg.row(k) += logphi(Y0(i), k, j)*X0(i, j);
-                            pzg.row(k) += log_1_minus_phi(Y0(i), k, j) * (1-X0(i, j));
+                            for(k = 0; k < K; k++){
+                                kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
+                                             + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
+                            }
                         }
                     }
+                    pzg.each_col() += kcontrib;
                 }
 
                 if(G0(i) < 0 & similarity >= 1){
