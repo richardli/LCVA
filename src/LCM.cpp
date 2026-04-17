@@ -302,6 +302,9 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     arma::mat pzyg(C*K, G);
     arma::cube px(N_test, C, K);
     arma::vec index2(2);
+    arma::vec pyg_vec(C*K);
+    arma::vec kcontrib(K);
+    arma::vec delta_fac(S);
     double tmp, sumV, sumN, tmp0, tmp1, sumlambda;
     double tol = 0.000001;
     int stick_break = 1;
@@ -573,7 +576,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                             pyg += X0(i, j) * logphi.slice(j) + (1 - X0(i, j)) * log_1_minus_phi.slice(j);
                         }
                     }
-                    arma::vec pyg_vec = arma::vectorise(pyg);
+                    pyg_vec = arma::vectorise(pyg);
                     pzyg.each_col() += pyg_vec;
                     for(k = 0; k < K; k++){
                         for(c = 0; c < C; c++){
@@ -613,18 +616,16 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     }
                     // Compute per-k log-likelihood scalars, then broadcast to all g at once.
                     // This is O(K*S + K*G) vs the original O(K*S*G).
-                    {
-                        arma::vec kcontrib(K, arma::fill::zeros);
-                        for(j = 0; j < S; j++){
-                            if(!ISNA(X0(i, j))){
-                                for(k = 0; k < K; k++){
-                                    kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
-                                                 + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
-                                }
+                    kcontrib.zeros();
+                    for(j = 0; j < S; j++){
+                        if(!ISNA(X0(i, j))){
+                            for(k = 0; k < K; k++){
+                                kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
+                                             + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
                             }
                         }
-                        pzg.each_col() += kcontrib;
                     }
+                    pzg.each_col() += kcontrib;
 
                     if(G0(i) < 0 & similarity >= 1){
                         index2 = sample_log_prob_matrix(pzg);
@@ -813,13 +814,13 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
             n1_cj = n1_cj.zeros();
             for(i = 0; i < N_train; i++){
                 // (1 - delta(c,k,j)) mask across all j for this observation's (c,k) pair
-                arma::vec delta_fac = 1.0 - delta.tube((int)Y1(i), (int)Z1(i));
+                delta_fac = 1.0 - delta.tube((int)Y1(i), (int)Z1(i));
                 n1_cj.row((int)Y1(i)) += X1a.row(i) % delta_fac.t();
                 n0_cj.row((int)Y1(i)) += X1b.row(i) % delta_fac.t();
             }
             // add in test counts
             for(i = 0; i < N_test; i++){
-                arma::vec delta_fac = 1.0 - delta.tube((int)Y0(i), (int)Z0(i));
+                delta_fac = 1.0 - delta.tube((int)Y0(i), (int)Z0(i));
                 n1_cj.row((int)Y0(i)) += X0a.row(i) % delta_fac.t();
                 n0_cj.row((int)Y0(i)) += X0b.row(i) % delta_fac.t();
             }
@@ -1127,6 +1128,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::mat pzyg(C*K, G);
     // arma::cube px(N_test, C, K);
     arma::vec index2(2);
+    arma::vec kcontrib(K);
     double sumV, sumN, sumlambda, lambda_ck;
     double tol = 0.000001;
 
@@ -1312,18 +1314,16 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                         pzg(k, G0(i)) = lambda(Y0(i), k, G0(i));
                     }
                 }
-                {
-                    arma::vec kcontrib(K, arma::fill::zeros);
-                    for(j = 0; j < S; j++){
-                        if(!ISNA(X0(i, j))){
-                            for(k = 0; k < K; k++){
-                                kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
-                                             + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
-                            }
+                kcontrib.zeros();
+                for(j = 0; j < S; j++){
+                    if(!ISNA(X0(i, j))){
+                        for(k = 0; k < K; k++){
+                            kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
+                                         + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
                         }
                     }
-                    pzg.each_col() += kcontrib;
                 }
+                pzg.each_col() += kcontrib;
 
                 if(G0(i) < 0 & similarity >= 1){
                     index2 = sample_log_prob_matrix(pzg);
