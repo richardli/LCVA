@@ -12,38 +12,16 @@ using namespace RcppArmadillo;
 using namespace arma;
 
 // ---------------------------------------------------------------------------
-// Fast RNG built on R's raw primitives (unif_rand / norm_rand).
-// Respects set.seed(). Bypasses parameter-validation wrappers in R::rbeta
-// and R::rgamma for speed. Gamma uses Marsaglia-Tsang (2000), the same
-// algorithm R uses internally.
+// RNG wrappers — thin pass-throughs to R's own samplers via R:: scalar API.
+// Uses R's RNG stream directly, so set.seed() in R gives fully reproducible
+// results identical to the pre-optimization version of this file.
+// Parameter-validation overhead is negligible compared to the algorithmic
+// savings in the structural optimisations elsewhere.
 // ---------------------------------------------------------------------------
 
 inline double fast_unif() { return unif_rand(); }
-
-// Marsaglia & Tsang (2000) gamma sampler.
-// shape >= 1 handled directly; shape < 1 uses Berman's U^(1/shape) reduction.
-inline double fast_gamma(double shape, double scale) {
-    if (shape < 1.0) {
-        return fast_gamma(shape + 1.0, scale) * std::pow(unif_rand(), 1.0 / shape);
-    }
-    const double d = shape - 1.0 / 3.0;
-    const double c = 1.0 / std::sqrt(9.0 * d);
-    for (;;) {
-        double x, v;
-        do { x = norm_rand(); v = 1.0 + c * x; } while (v <= 0.0);
-        v = v * v * v;
-        double u = unif_rand();
-        double x2 = x * x;
-        if (u < 1.0 - 0.0331 * x2 * x2) return d * v * scale;
-        if (std::log(u) < 0.5 * x2 + d * (1.0 - v + std::log(v))) return d * v * scale;
-    }
-}
-
-inline double fast_beta(double a, double b) {
-    double x = fast_gamma(a, 1.0);
-    double y = fast_gamma(b, 1.0);
-    return x / (x + y);
-}
+inline double fast_gamma(double shape, double scale) { return R::rgamma(shape, scale); }
+inline double fast_beta(double a, double b)          { return R::rbeta(a, b); }
 
 
 //' Calculating the log of sum of exponentiation vector
