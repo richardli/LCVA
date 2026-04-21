@@ -1,7 +1,8 @@
 #include <RcppArmadillo.h>
 #include <RcppArmadilloExtensions/sample.h>
 #include <stdio.h>
-#include <math.h> 
+#include <math.h>
+#include <algorithm>
 
 // [[Rcpp::depends(RcppArmadillo)]]
 
@@ -9,6 +10,40 @@ using namespace std;
 using namespace Rcpp;
 using namespace RcppArmadillo;
 using namespace arma;
+
+// ---------------------------------------------------------------------------
+// Fast RNG built on R's raw primitives (unif_rand / norm_rand).
+// Respects set.seed(). Bypasses parameter-validation wrappers in R::rbeta
+// and R::rgamma for speed. Gamma uses Marsaglia-Tsang (2000), the same
+// algorithm R uses internally.
+// ---------------------------------------------------------------------------
+
+inline double fast_unif() { return unif_rand(); }
+
+// Marsaglia & Tsang (2000) gamma sampler.
+// shape >= 1 handled directly; shape < 1 uses Berman's U^(1/shape) reduction.
+inline double fast_gamma(double shape, double scale) {
+    if (shape < 1.0) {
+        return fast_gamma(shape + 1.0, scale) * std::pow(unif_rand(), 1.0 / shape);
+    }
+    const double d = shape - 1.0 / 3.0;
+    const double c = 1.0 / std::sqrt(9.0 * d);
+    for (;;) {
+        double x, v;
+        do { x = norm_rand(); v = 1.0 + c * x; } while (v <= 0.0);
+        v = v * v * v;
+        double u = unif_rand();
+        double x2 = x * x;
+        if (u < 1.0 - 0.0331 * x2 * x2) return d * v * scale;
+        if (std::log(u) < 0.5 * x2 + d * (1.0 - v + std::log(v))) return d * v * scale;
+    }
+}
+
+inline double fast_beta(double a, double b) {
+    double x = fast_gamma(a, 1.0);
+    double y = fast_gamma(b, 1.0);
+    return x / (x + y);
+}
 
 
 //' Calculating the log of sum of exponentiation vector
@@ -20,7 +55,7 @@ using namespace arma;
 //' @export
 // [[Rcpp::export]]
 double logsumexp(arma::vec &x){
-  double xs = max(x);    
+  double xs = max(x);
   double p = xs + log(sum(exp(x - xs)));
   return(p);
 }
@@ -30,26 +65,25 @@ double logsumexp(arma::vec &x){
 //' @examples
 //' x <- rep(0, 10000)
 //' prob <- c(1, 2, 3, 4)
-//' logprob <- log(prob) 
+//' logprob <- log(prob)
 //' for(i in 1:10000){
-//'   x[i] <- sample_log_prob(logprob) 
+//'   x[i] <- sample_log_prob(logprob)
 //' }
 //' round(table(x) / 10000, 2)
 //' @export
-//' 
+//'
 // [[Rcpp::export]]
 int sample_log_prob(arma::vec &x){
-  double xs = max(x);    
-  arma::vec p = cumsum(exp(x - (xs + log(sum(exp(x - xs))))));
-  int len = p.size();
-  double u = runif(1, 0.0, 1.0)(0);
-  int i;
-  for(i = 0; i < len; i++){
-    if(u <= p(i)){
-        return(i);
-    }   
+  double xs = max(x);
+  double lse = xs + log(sum(exp(x - xs)));
+  double u = fast_unif();
+  double cs = 0.0;
+  int len = x.size();
+  for(int i = 0; i < len; i++){
+    cs += exp(x(i) - lse);
+    if(u <= cs) return(i);
   }
-  return(-1);
+  return(len - 1);  // guard against floating-point rounding
 }
 //' Sample from a column of the log of unnormalized probability matrix
 //' @param x a matrix where each column contains the log of a unnormalized probability vector
@@ -58,22 +92,33 @@ int sample_log_prob(arma::vec &x){
 //' @examples
 //' x <- rep(0, 10000)
 //' prob <- cbind(c(1, 2, 3, 4), c(4, 3, 2, 1))
-//' logprob <- log(prob) 
+//' logprob <- log(prob)
 //' for(i in 1:10000){
-//'   x[i] <- sample_log_prob_matrix_col(logprob, 0) 
+//'   x[i] <- sample_log_prob_matrix_col(logprob, 0)
 //' }
 //' table(x) / 10000
 //' for(i in 1:10000){
-//'   x[i] <- sample_log_prob_matrix_col(logprob, 1) 
+//'   x[i] <- sample_log_prob_matrix_col(logprob, 1)
 //' }
 //' round(table(x) / 10000, 2)
 //' @export
-//' 
+//'
 // [[Rcpp::export]]
 int sample_log_prob_matrix_col(arma::mat &x, int id){
-    arma::vec y = x.col(id);
-    int k = sample_log_prob(y);
-    return(k);
+    // x.col(id) is contiguous (column-major): use raw pointer, no copy
+    const double* col = x.colptr(id);
+    int n = x.n_rows;
+    double xs = *std::max_element(col, col + n);
+    double lse = 0.0;
+    for(int i = 0; i < n; i++) lse += exp(col[i] - xs);
+    lse = xs + log(lse);
+    double u = fast_unif();
+    double cs = 0.0;
+    for(int i = 0; i < n; i++){
+        cs += exp(col[i] - lse);
+        if(u <= cs) return(i);
+    }
+    return(n - 1);
 }
 
 //' Sample from log of unnormalized probability matrix
@@ -82,32 +127,34 @@ int sample_log_prob_matrix_col(arma::mat &x, int id){
 //' @examples
 //' x <- matrix(0, 10000, 2)
 //' prob <- cbind(c(1, 2, 3, 4), c(4, 3, 2, 1))
-//' logprob <- log(prob) 
+//' logprob <- log(prob)
 //' for(i in 1:10000){
-//'   x[i, ] <- sample_log_prob_matrix(logprob) 
+//'   x[i, ] <- sample_log_prob_matrix(logprob)
 //' }
 //' round(table(paste(x[, 1], x[, 2], sep = "-")) / 10000, 2)
 //' prob / sum(prob)
 //' @export
-//' 
+//'
 // [[Rcpp::export]]
 arma::vec sample_log_prob_matrix(arma::mat &x){
-  arma::vec y(x.n_cols * x.n_rows);
-  int i, j;
-  int tmp = 0;
-  for(i = 0; i < x.n_rows; i ++){
-    for(j = 0; j < x.n_cols; j++){
-        y(tmp) = x(i, j);
-        tmp += 1;       
+  // Stream row-major over the matrix without flattening into a temp vec.
+  int n_rows = x.n_rows, n_cols = x.n_cols;
+  double xs = x.max();
+  double lse = 0.0;
+  for(int i = 0; i < n_rows; i++)
+    for(int j = 0; j < n_cols; j++)
+      lse += exp(x(i, j) - xs);
+  lse = xs + log(lse);
+  double u = fast_unif();
+  double cs = 0.0;
+  arma::vec out(2);
+  for(int i = 0; i < n_rows; i++){
+    for(int j = 0; j < n_cols; j++){
+      cs += exp(x(i, j) - lse);
+      if(u <= cs){ out(0) = i; out(1) = j; return(out); }
     }
   }
-  int k  = sample_log_prob(y);  
-  arma::vec out(2);
-  // k = 9, x ~ 3*4, should return (2, 1)
-  // column index 
-  out(1) = k % x.n_cols;
-  // row index
-  out(0) = (k - out(1)) / x.n_cols;
+  out(0) = n_rows - 1; out(1) = n_cols - 1;
   return(out);
 }
 
@@ -118,38 +165,36 @@ arma::vec sample_log_prob_matrix(arma::mat &x){
 //' x <- rep(0, 10000)
 //' prob <- c(.1, .2, .3, .4)
 //' for(i in 1:10000){
-//'   x[i] <- sample_prob(prob) 
+//'   x[i] <- sample_prob(prob)
 //' }
 //' round(table(x) / 10000, 2)
 //' @export
-//' 
+//'
 // [[Rcpp::export]]
 int sample_prob(arma::vec &x){
+  double u = fast_unif();
+  double cs = 0.0;
   int len = x.size();
-  arma::vec p = cumsum(x);
-  double u = runif(1, 0.0, 1.0)(0);
-  int i;
-  for(i = 0; i < len; i++){
-    if(u <= p(i)){
-        return(i);
-    }   
+  for(int i = 0; i < len; i++){
+    cs += x(i);
+    if(u <= cs) return(i);
   }
-  return(-1);
+  return(len - 1);  // guard against floating-point rounding
 }
- 
+
 //' Sample from the Dirichlet distribution
 //'
 //' @param a vector of Dirichlet concentration parameter
-//' @return a sample from Dirichlet(a).  
+//' @return a sample from Dirichlet(a).
 //' @examples
 //' alpha <- c(1, 2, 3, 4)
 //' x <- matrix(0, 10000, 4)
 //' for(i in 1:10000){
-//'   x[i, ] <- sample_Dirichlet(alpha) 
+//'   x[i, ] <- sample_Dirichlet(alpha)
 //' }
 //' round(apply(x, 2, mean), 2)
 //' @export
-//' 
+//'
 // [[Rcpp::export]]
 arma::vec sample_Dirichlet(arma::vec &a){
   int len = a.size();
@@ -160,8 +205,8 @@ arma::vec sample_Dirichlet(arma::vec &a){
     if(a(i) == 0){
         rg(i) = 0;
     }else{
-        rg(i) = Rcpp::rgamma(1, a(i), 1)(0);
-        sum += rg(i);        
+        rg(i) = fast_gamma(a(i), 1.0);
+        sum += rg(i);
     }
   }
   arma::vec out = rg / sum;
@@ -170,20 +215,20 @@ arma::vec sample_Dirichlet(arma::vec &a){
 
 
 //' Internal function to fit the nested latent class model on training data
-//' 
+//'
 //' @param X a n by p matrix of the symptoms with 0 being absent, 1 being present, and NA being missing.
 //' @param Y a vector of length n of the causes-of-death, coded into 1 to C, where C is the total number of all cause.
 //' @param Group a vector of length n of the domain indicators, coded into 1 to G, where G is the total number of all domains.
 //' @param X_test currently not used.
 //' @param Y_test currently not used.
 //' @param Group_test currently not used.
-//' @param N_train size of training data, n. 
+//' @param N_train size of training data, n.
 //' @param N_test currently not used.
 //' @param S number of symptoms.
 //' @param C number of causes.
 //' @param K number of latent classes within each cause-of-death.
 //' @param G number of training domains.
-//' @param alpha_pi Concentration parameter for the training domain CSMF prior.  
+//' @param alpha_pi Concentration parameter for the training domain CSMF prior.
 //' @param alpha_eta currently not used.
 //' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
 //' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
@@ -195,15 +240,15 @@ arma::vec sample_Dirichlet(arma::vec &a){
 //' @param thin number of draws to sample per one saved.
 //' @param similarity shrinkage model for the testing domain mixing weights. Currently not used.
 //' @param sparse binary indicator of whether to encourage latent profiles to be sparse
-//' 
+//'
 //' @examples
 //' message("See ?LCVA.train")
 // [[Rcpp::export]]
-SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group, 
+SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
          SEXP X_test, SEXP Y_test, SEXP Group_test,
-         int N_train, int N_test, int S, int C, int K, int G, 
-         double alpha_pi, double alpha_eta, double a_omega, double b_omega, 
-         double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau, 
+         int N_train, int N_test, int S, int C, int K, int G,
+         double alpha_pi, double alpha_eta, double a_omega, double b_omega,
+         double nu_phi, SEXP a_gamma, SEXP b_gamma, double nu_tau,
          int Nitr, int thin, int similarity, int sparse, int verbose) {
 
     // organize input
@@ -232,7 +277,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     arma::cube phi(C, K, S);
     arma::cube logphi(C, K, S);
     arma::cube log_1_minus_phi(C, K, S);
-    arma::mat gamma(C, S);    
+    arma::mat gamma(C, S);
     arma::cube delta(C, K, S);
     arma::vec tau(C);
     arma::mat eta(G, C);
@@ -251,18 +296,9 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     // mixture parameters for the matrix sticking process
     arma::mat U(C, K);
     arma::mat W(G, K);
-    // double omega_U;
-    // double omega_W;
-    // arma::mat nR_ck(C, K);
-    // arma::mat nS_gk(G, K);
-    // arma::mat nR0_ck(C, K);
-    // arma::mat nS0_gk(G, K);
-    // arma::vec nS_gk_test(K);     
-    // arma::vec nS0_gk_test(K); 
 
     // parameters for the separate process for the test data
     arma::vec omega_test(C);
-    // arma::vec W_test(K); 
 
     // output
     int Nout = Nitr;
@@ -275,22 +311,20 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     arma::cube pi_out(Nout, C, G);
     arma::mat pi_test_out(Nout, C);
     arma::mat loglik(Nout, N_train);
-    // arma::vec omega_U_out(Nout);
-    // arma::vec omega_W_out(Nout);
-    List phi_out, gamma_out, lambda_out, lambda_test_out;  
+    List phi_out, gamma_out, lambda_out, lambda_test_out;
 
     // count arrays
     arma::cube n_ckg(C, K, G);
     arma::cube n_ckj_0(C, K, S);
     arma::cube n_ckj_1(C, K, S);
     arma::mat n_ck(C, K);
-    arma::mat n_cg(C, G); 
+    arma::mat n_cg(C, G);
     arma::mat n0_cj(C, S);
     arma::mat n1_cj(C, S);
 
     arma::mat n_ck_test(C, K);
-    arma::vec n_c_test(C); 
-    arma::mat n_g_latent(G, C); 
+    arma::vec n_c_test(C);
+    arma::mat n_g_latent(G, C);
 
     int itr, itr_save, i, j, c, k, l, g, zy, itr_tmp;
     int itr_show = 500;
@@ -302,9 +336,15 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     arma::mat pzyg(C*K, G);
     arma::cube px(N_test, C, K);
     arma::vec index2(2);
-    arma::vec pyg_vec(C*K);
+    arma::vec pyg_vec(pyg.memptr(), C*K, false, true); // non-owning alias of pyg storage
     arma::vec kcontrib(K);
     arma::vec delta_fac(S);
+    // Per-c scratch for phi/delta block
+    double log_tau_c, log_1m_tau_c;
+    // log(gamma(c,j)) and log(1-gamma(c,j)): updated once after each gamma sample,
+    // reused K times per (c,j) in the phi/delta loop.
+    arma::mat log_gamma_m(C, S);
+    arma::mat log_1m_gamma_m(C, S);
     double tmp, sumV, sumN, tmp0, tmp1, sumlambda;
     double tol = 0.000001;
     int stick_break = 1;
@@ -318,22 +358,22 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
         }
     }
 
-    // 
+    //
     // Initialization
-    // 
+    //
     if(stick_break > 0){
         for(g = 0; g < G; g++){
             for(c = 0; c < C; c++){
-                omega(c, g) = Rcpp::rgamma(1, a_omega, 1/b_omega)(0);
+                omega(c, g) = fast_gamma(a_omega, 1.0/b_omega);
                 //  all but the last stick
                 sumlambda = 0.0;
                 for(k = 0; k < K - 1; k++){
-                    V(c, k, g) = Rcpp::rbeta(1, 1, omega(c, g))(0);
+                    V(c, k, g) = fast_beta(1.0, omega(c, g));
                     if(V(c, k, g) < tol){
-                         V(c, k, g) = tol; 
+                         V(c, k, g) = tol;
                     }
                     if(V(c, k, g) > 1 - tol){
-                         V(c, k, g) = 1 - tol; 
+                         V(c, k, g) = 1 - tol;
                     }
                     lambda(c, k, g) = log(V(c, k, g));
                     for(l = 0; l < k; l++){
@@ -350,7 +390,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 }
             }
         }
-        for(c = 0; c < C; c++) omega_test(c) = Rcpp::rgamma(1, a_omega, 1/b_omega)(0);
+        for(c = 0; c < C; c++) omega_test(c) = fast_gamma(a_omega, 1.0/b_omega);
     }
 
 
@@ -362,7 +402,6 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     for(i = 0; i < N_train; i++){
         config(G1(i), Y1(i)) += 1;
     }
-        // Rcout <<config << "\n";
 
     for(c = 0; c < C; c++){
         tmp = 0;
@@ -386,25 +425,24 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     if(lambda_test.has_inf()){
         Rcout << "lambda test has inf\n";
     }
-   
+
     for(c = 0; c < C; c++){
         for(j = 0; j < S; j++){
-            gamma(c, j) = Rcpp::rbeta(1, a_cj(c, j), b_cj(c, j))(0);
+            gamma(c, j) = fast_beta(a_cj(c, j), b_cj(c, j));
             for(k = 0; k < K; k++){
-                phi(c, k, j) = Rcpp::rbeta(1, 1, nu_phi)(0);
+                phi(c, k, j) = fast_beta(1.0, nu_phi);
                 logphi(c, k, j) = log(phi(c, k, j));
                 log_1_minus_phi(c, k, j) = log(1 - phi(c, k, j));
             }
         }
     }
     for(c = 0; c < C; c++){
-        tau(c) = rbeta(1, 1, nu_tau)(0);
+        tau(c) = fast_beta(1.0, nu_tau);
     }
 
     // initialize latent states
     pi = pi.ones();
     pi_test = pi_test.zeros();
-    // if(common_pi == 0){
         for(i = 0; i < N_train; i++){
             pi(Y1(i), G1(i)) ++;
         }
@@ -415,23 +453,10 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 tmp += pi(c, g);
             }
             for(c = 0; c < C; c++){
-                pi(c, g) = pi(c, g) / tmp; 
+                pi(c, g) = pi(c, g) / tmp;
                 pi_test(c) += pi(c, g) / (G + 0.0);
             }
         }
-    // }else{
-    //     pi = pi.ones();
-    //     for(i = 0; i < N_train; i++){
-    //         pi(Y1(i), 0) += 1 / (N_train + C + 0.0);
-    //     }
-    //     for(c = 0; c < C; c++){
-    //         for(g = 1; g < G; g++){
-    //             pi(c, g) = pi(c, 0);
-    //         }
-    //         pi_test(c) = pi(c, 0);
-    //     }
-
-    // }
 
     for(i = 0; i < N_test; i++){
         if(Y0_known(i) == 0){
@@ -441,8 +466,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
         G_latent(i) = sample_prob(pg);
     }
     // Precompute NA-masked copies: X1a(i,j)=X1(i,j) if observed else 0,
-    // X1b(i,j)=1-X1(i,j) if observed else 0. This lets us replace ISNA-guarded
-    // j-loops with BLAS matrix-vector products over symptoms.
+    // X1b(i,j)=1-X1(i,j) if observed else 0.
     arma::mat X1a(N_train, S, arma::fill::zeros);
     arma::mat X1b(N_train, S, arma::fill::zeros);
     for(i = 0; i < N_train; i++){
@@ -463,14 +487,37 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
             }
         }
     }
-    // Non-owning (C*K) x S matrix views of the logphi cubes.
-    // Armadillo stores cube(C,K,S) in column-major order so element (c,k,s)
-    // is at offset c + k*C + s*C*K, matching row k*C+c of a (C*K x S) matrix.
-    // Because logphi is updated in-place each iteration (no reallocation),
-    // these views always reflect current values without any copying.
+    // Transpose X matrices so that observation i is column i (stride-1 access).
+    // X1a(i,j) has stride N_train between j values; X1a_t(j,i) has stride 1.
+    arma::mat X1a_t = X1a.t();   // S x N_train
+    arma::mat X1b_t = X1b.t();
+    arma::mat X0a_t = X0a.t();   // S x N_test
+    arma::mat X0b_t = X0b.t();
+
+    // Precomputed log-probability caches, updated after each pi/eta sample.
+    arma::vec log_pi_test_v(C);
+    arma::mat log_pi_m(C, G);
+    arma::mat log_eta_m(G, C);
+    for(c = 0; c < C; c++){
+        log_pi_test_v(c) = log(pi_test(c));
+        for(g = 0; g < G; g++){
+            log_pi_m(c, g) = log(pi(c, g));
+            log_eta_m(g, c) = log(eta(g, c));
+        }
+    }
+
+    // lgamma(1) == 0 exactly; lgamma(nu_phi) and lgamma(1+nu_phi) are pure constants.
+    const double lgamma_nu_phi   = lgamma(nu_phi);
+    const double lgamma_1_nu_phi = lgamma(1.0 + nu_phi);
+    // Initialise log_gamma cache from the initial gamma draw.
+    for(c = 0; c < C; c++)
+        for(j = 0; j < S; j++){
+            log_gamma_m(c, j)    = log(gamma(c, j));
+            log_1m_gamma_m(c, j) = log(1.0 - gamma(c, j));
+        }
+
     if(verbose == 1) Rcout << "Start posterior sampling\n";
     for(itr_save = 0; itr_save < Nitr; itr_save ++){
-        // Rcout << ".";
         itr_tmp = (itr_save + 1) % itr_show;
         if(itr_tmp == 0 & verbose == 1){
           itr_tmp = (itr_save + 1) * thin;
@@ -498,19 +545,17 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     pz(k) = lambda(Y1(i), k, G1(i));
                 }
                 pyg.zeros();
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X1(i, j))){
-                        pyg += X1(i, j) * logphi.slice(j) + (1 - X1(i, j)) * log_1_minus_phi.slice(j);
+                {
+                    const double* xa = X1a_t.colptr(i); // stride-1 over j
+                    const double* xb = X1b_t.colptr(i);
+                    for(j = 0; j < S; j++){
+                        if(xa[j] > 0.5){
+                            pyg += logphi.slice(j);
+                        } else if(xb[j] > 0.5){
+                            pyg += log_1_minus_phi.slice(j);
+                        }
                     }
                 }
-                // for(j = 0; j < S; j++){
-                //     if(!ISNA(X1(i, j))){
-                //         for(k = 0; k < K; k++){
-                //             pz(k) += logphi(Y1(i), k, j)*X1(i, j);
-                //             pz(k) += log_1_minus_phi(Y1(i), k, j) * (1-X1(i, j));
-                //         }
-                //     }
-                // }
 
                 // compute log likelihood
                 py.zeros();
@@ -532,9 +577,9 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 n_ck(Y1(i), Z1(i)) += 1;
                 n_ckg(Y1(i), Z1(i), G1(i)) += 1;
                 n_cg(Y1(i), G1(i)) += 1;
-                // tube(c,k) returns the length-S vector n_ckj(c,k,:)
-                n_ckj_1.tube((int)Y1(i), (int)Z1(i)) += X1a.row(i).t();
-                n_ckj_0.tube((int)Y1(i), (int)Z1(i)) += X1b.row(i).t();
+                // X1a_t.col(i) is contiguous; X1a.row(i) is stride-N_train
+                n_ckj_1.tube((int)Y1(i), (int)Z1(i)) += X1a_t.col(i);
+                n_ckj_0.tube((int)Y1(i), (int)Z1(i)) += X1b_t.col(i);
             }
 
 
@@ -552,32 +597,37 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                         for(c = 0; c < C; c++){
                             for(k = 0; k < K; k++){
                                 for(g = 0; g < G; g++){
-                                   pzyg(k * C + c, g) += lambda(c, k, g) + log(pi_test(c)) + log(eta(g, c));
+                                   pzyg(k * C + c, g) += lambda(c, k, g) + log_pi_test_v(c) + log_eta_m(g, c);
                                 }
                             }
                         }
                     }else if(G0(i) < 0 && similarity == 0){
                         for(c = 0; c < C; c++){
                             for(k = 0; k < K; k++){
-                                 pzyg(k * C + c, 0) += lambda_test(c, k) + log(pi_test(c));
+                                 pzyg(k * C + c, 0) += lambda_test(c, k) + log_pi_test_v(c);
                              }
                          }
                     }else{
                         for(c = 0; c < C; c++){
                             for(k = 0; k < K; k++){
-                                pzyg(k * C + c, G0(i)) += lambda(c, k, G0(i)) + log(pi(c, G0(i)));
+                                pzyg(k * C + c, G0(i)) += lambda(c, k, G0(i)) + log_pi_m(c, G0(i));
                             }
                         }
                     }
 
                     pyg.zeros();
-                    for(j = 0; j < S; j++){
-                        if(!ISNA(X0(i, j))){
-                            pyg += X0(i, j) * logphi.slice(j) + (1 - X0(i, j)) * log_1_minus_phi.slice(j);
+                    {
+                        const double* xa = X0a_t.colptr(i);
+                        const double* xb = X0b_t.colptr(i);
+                        for(j = 0; j < S; j++){
+                            if(xa[j] > 0.5){
+                                pyg += logphi.slice(j);
+                            } else if(xb[j] > 0.5){
+                                pyg += log_1_minus_phi.slice(j);
+                            }
                         }
                     }
-                    pyg_vec = arma::vectorise(pyg);
-                    pzyg.each_col() += pyg_vec;
+                    pzyg.each_col() += pyg_vec; // pyg_vec is non-owning alias of pyg
                     for(k = 0; k < K; k++){
                         for(c = 0; c < C; c++){
                             px(i, c, k) += pyg_vec(k*C+c);
@@ -592,11 +642,11 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                         index2(0) = sample_log_prob_matrix_col(pzyg, G0(i));
                     }
 
-                     
+
                     zy = index2(0);
                     Y0(i) = zy % C;
                     Z0(i) = (zy - Y0(i)) / C;
-                    // sample latent group membership 
+                    // sample latent group membership
                     if(G0(i) < 0 && similarity >= 1){
                         G_latent(i) = index2(1);
                         n_g_latent(G_latent(i), Y0(i)) ++;
@@ -606,7 +656,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     for(k = 0; k < K; k++){
                         if(G0(i) < 0 & similarity >= 1){
                             for(g = 0; g < G; g++){
-                                pzg(k, g) = lambda(Y0(i), k, g) + log(eta(g, Y0(i)));
+                                pzg(k, g) = lambda(Y0(i), k, g) + log_eta_m(g, Y0(i));
                             }
                         }else if(G0(i) < 0 & similarity == 0){
                             pzg(k, 0) = lambda_test(Y0(i), k);
@@ -614,14 +664,20 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                             pzg(k, G0(i)) = lambda(Y0(i), k, G0(i));
                         }
                     }
-                    // Compute per-k log-likelihood scalars, then broadcast to all g at once.
-                    // This is O(K*S + K*G) vs the original O(K*S*G).
                     kcontrib.zeros();
-                    for(j = 0; j < S; j++){
-                        if(!ISNA(X0(i, j))){
-                            for(k = 0; k < K; k++){
-                                kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
-                                             + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
+                    {
+                        const double* xa = X0a_t.colptr(i);
+                        const double* xb = X0b_t.colptr(i);
+                        int ci = (int)Y0(i);
+                        for(j = 0; j < S; j++){
+                            if(xa[j] > 0.5){
+                                for(k = 0; k < K; k++){
+                                    kcontrib(k) += logphi(ci, k, j);
+                                }
+                            } else if(xb[j] > 0.5){
+                                for(k = 0; k < K; k++){
+                                    kcontrib(k) += log_1_minus_phi(ci, k, j);
+                                }
                             }
                         }
                     }
@@ -646,8 +702,8 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     n_c_test(Y0(i)) += 1;
                 }
                 // add in test counts
-                n_ckj_1.tube((int)Y0(i), (int)Z0(i)) += X0a.row(i).t();
-                n_ckj_0.tube((int)Y0(i), (int)Z0(i)) += X0b.row(i).t();
+                n_ckj_1.tube((int)Y0(i), (int)Z0(i)) += X0a_t.col(i);
+                n_ckj_0.tube((int)Y0(i), (int)Z0(i)) += X0b_t.col(i);
             }
 
             // ------------------------------------------------//
@@ -662,13 +718,13 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                         sumN = n_cg(c, g);
                         for(k = 0; k < K - 1; k++){
                             sumN = sumN - n_ckg(c, k, g);
-                            V(c, k, g) = Rcpp::rbeta(1,  n_ckg(c, k, g)+1.0, omega(c, g) + sumN + 0.0)(0);
+                            V(c, k, g) = fast_beta(n_ckg(c, k, g)+1.0, omega(c, g) + sumN);
                             sumV = sumV + log(1 - V(c, k, g));
                             if(V(c, k, g) < tol){
-                                 V(c, k, g) = tol; 
+                                 V(c, k, g) = tol;
                             }
                             if(V(c, k, g) > 1 - tol){
-                                 V(c, k, g) = 1 - tol; 
+                                 V(c, k, g) = 1 - tol;
                             }
                             lambda(c, k, g) = log(V(c, k, g));
                             for(l = 0; l < k; l++){
@@ -682,13 +738,9 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                             lambda(c, K-1, g) = log(1 - sumlambda);
                         }
 
-                        omega(c, g) = Rcpp::rgamma(1, a_omega + K - 1, 1/(b_omega - sumV))(0);
+                        omega(c, g) = fast_gamma(a_omega + K - 1, 1.0/(b_omega - sumV));
                     }
                 }
-
-            // ------------------------------------------------//
-            // Sample V and omega in training, matrix stick
-            // ------------------------------------------------//
 
            }
 
@@ -719,6 +771,9 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                         eta.col(c) = sample_Dirichlet(pg);
                     }
                 }
+                // Update log_eta cache after eta sampling
+                for(c = 0; c < C; c++)
+                    for(g = 0; g < G; g++) log_eta_m(g, c) = log(eta(g, c));
                 lambda_test.zeros();
                 for(c = 0; c < C; c++){
                     for(k = 0; k < K; k++){
@@ -739,16 +794,16 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                 for(c = 0; c < C; c++){
                     sumV = 0.0;
                     sumlambda = 0.0;
-                    sumN = n_c_test(c); 
+                    sumN = n_c_test(c);
                     for(k = 0; k < K - 1; k++){
-                        sumN = sumN - n_ck_test(c, k);  
-                        V_test(c, k) = Rcpp::rbeta(1,  n_ck_test(c, k)+1.0, omega_test(c) + sumN + 0.0)(0);
+                        sumN = sumN - n_ck_test(c, k);
+                        V_test(c, k) = fast_beta(n_ck_test(c, k)+1.0, omega_test(c) + sumN);
                         sumV = sumV + log(1 - V_test(c, k));
                         if(V_test(c, k) < tol){
-                             V_test(c, k) = tol; 
+                             V_test(c, k) = tol;
                         }
                         if(V_test(c, k) > 1 - tol){
-                             V_test(c, k) = 1 - tol; 
+                             V_test(c, k) = 1 - tol;
                         }
                         lambda_test(c, k) = log(V_test(c, k));
                         for(l = 0; l < k; l++){
@@ -761,7 +816,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     }else{
                         lambda_test(c, K-1) = log(1 - sumlambda);
                     }
-                    omega_test(c) = Rcpp::rgamma(1, a_omega + K - 1, 1/(b_omega - sumV))(0);
+                    omega_test(c) = fast_gamma(a_omega + K - 1, 1.0/(b_omega - sumV));
                 }
            }
         }
@@ -769,130 +824,87 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
 
             // ------------------------------------------------//
             // Sample delta, tau, and phi
-            // ------------------------------------------------//       
-            for(c = 0; c < C; c++){  
-                tmp = 0;  
+            // ------------------------------------------------//
+            for(c = 0; c < C; c++){
+                tmp = 0;
+                log_tau_c    = log(tau(c));
+                log_1m_tau_c = log(1.0 - tau(c));
                 for(k = 0; k < K; k++){
                     for(j = 0; j < S; j++){
                         if(sparse == 1){
-                            tmp0 = log(1 - tau(c)) + 
-                                   log(gamma(c, j)) * n_ckj_1(c,k,j) +  
-                                   log(1-gamma(c, j)) * n_ckj_0(c,k,j) + 
-                                   lgamma(1) + lgamma(nu_phi) - lgamma(1 + nu_phi);
-                            tmp1 = log(tau(c)) + 
-                                   lgamma(1 + n_ckj_1(c,k,j)) +
-                                   lgamma(nu_phi + n_ckj_0(c,k,j)) - 
-                                   lgamma(1 + nu_phi + n_ckj_1(c,k,j) + n_ckj_0(c,k,j));
-                            // e^x / (e^x + e^y) = 1 / (1 + e^{y - x})       
-                            delta(c, k, j) = Rcpp::rbinom(1, 1, 1 / (1 + exp(tmp0 - tmp1)))(0);
+                            // lgamma(1)==0; lgamma_nu_phi and lgamma_1_nu_phi are precomputed constants
+                            tmp0 = log_1m_tau_c +
+                                   log_gamma_m(c, j)    * n_ckj_1(c,k,j) +
+                                   log_1m_gamma_m(c, j) * n_ckj_0(c,k,j) +
+                                   lgamma_nu_phi - lgamma_1_nu_phi;
+                            tmp1 = log_tau_c +
+                                   lgamma(1.0 + n_ckj_1(c,k,j)) +
+                                   lgamma(nu_phi + n_ckj_0(c,k,j)) -
+                                   lgamma(1.0 + nu_phi + n_ckj_1(c,k,j) + n_ckj_0(c,k,j));
+                            delta(c, k, j) = (fast_unif() < 1.0 / (1.0 + exp(tmp0 - tmp1))) ? 1 : 0;
                         }else{
                             delta(c, k, j) = 1;
                         }
-                                // Rcout << tmp1 << tmp0 << "\n";
-                                // if(delta.has_nan()){
-                                //      Rcout << tmp0 <<" "<< tmp1 << "\n";
-                                //      Rcout << (1 - tau(c)) <<" "<< gamma(c, j) <<" "<<  n_ckj_1(c,k,j) << "\n";
-                                // }
                         tmp += delta(c, k, j);
                         if(delta(c, k, j) > 0.5){
-                            phi(c, k, j) = Rcpp::rbeta(1, 1 + n_ckj_1(c,k,j), nu_phi + n_ckj_0(c,k,j))(0);  
+                            phi(c, k, j) = fast_beta(1.0 + n_ckj_1(c,k,j), nu_phi + n_ckj_0(c,k,j));
+                            logphi(c, k, j) = log(phi(c, k, j));
+                            log_1_minus_phi(c, k, j) = log(1.0 - phi(c, k, j));
                         }else{
                             phi(c, k, j) = gamma(c, j);
+                            logphi(c, k, j) = log_gamma_m(c, j);
+                            log_1_minus_phi(c, k, j) = log_1m_gamma_m(c, j);
                         }
-                        logphi(c, k, j) = log(phi(c, k, j));
-                        log_1_minus_phi(c, k, j) = log(1 - phi(c, k, j));
                     }
                 }
-                tau(c) = Rcpp::rbeta(1, 1 + tmp, nu_tau + K * S - tmp)(0);
-                // Rcout << "-----" << tmp <<" "<< K * S - tmp << "\n";
-            } 
+                tau(c) = fast_beta(1.0 + tmp, nu_tau + K * S - tmp);
+            }
 
             // ------------------------------------------------//
             // Sample gamma
-            // ------------------------------------------------//             
+            // ------------------------------------------------//
             n0_cj = n0_cj.zeros();
             n1_cj = n1_cj.zeros();
             for(i = 0; i < N_train; i++){
-                // (1 - delta(c,k,j)) mask across all j for this observation's (c,k) pair
                 delta_fac = 1.0 - delta.tube((int)Y1(i), (int)Z1(i));
-                n1_cj.row((int)Y1(i)) += X1a.row(i) % delta_fac.t();
-                n0_cj.row((int)Y1(i)) += X1b.row(i) % delta_fac.t();
+                // X1a_t.col(i) is contiguous; X1a.row(i) is stride-N_train
+                n1_cj.row((int)Y1(i)) += (X1a_t.col(i) % delta_fac).t();
+                n0_cj.row((int)Y1(i)) += (X1b_t.col(i) % delta_fac).t();
             }
             // add in test counts
             for(i = 0; i < N_test; i++){
                 delta_fac = 1.0 - delta.tube((int)Y0(i), (int)Z0(i));
-                n1_cj.row((int)Y0(i)) += X0a.row(i) % delta_fac.t();
-                n0_cj.row((int)Y0(i)) += X0b.row(i) % delta_fac.t();
+                n1_cj.row((int)Y0(i)) += (X0a_t.col(i) % delta_fac).t();
+                n0_cj.row((int)Y0(i)) += (X0b_t.col(i) % delta_fac).t();
             }
 
-
-            for(c = 0; c < C; c++){    
+            // Sample gamma and refresh log caches; phi where delta=0 is updated below.
+            for(c = 0; c < C; c++){
                 for(j = 0; j < S; j++){
-                    // tmp0 = a_cj(c, j);
-                    // tmp1 = b_cj(c, j);
-                    // for(k = 0; k < K; k++){
-                    //     tmp0 += n_ckj_1(c,k,j) * (1-delta(c,k,j));
-                    //     tmp1 += (n_ck(c,k) - n_ckj_1(c,k,j)) * (1-delta(c,k,j));
-                    // }
-                    gamma(c, j) = Rcpp::rbeta(1, a_cj(c, j) + n1_cj(c, j), b_cj(c, j) + n0_cj(c, j))(0); 
-                                // if(gamma.has_nan()){
-                                //      Rcout << tmp0 <<" "<< tmp1 << "\n";
-                                // }
+                    gamma(c, j) = fast_beta(a_cj(c, j) + n1_cj(c, j), b_cj(c, j) + n0_cj(c, j));
+                    log_gamma_m(c, j)    = log(gamma(c, j));
+                    log_1m_gamma_m(c, j) = log(1.0 - gamma(c, j));
                 }
             }
-             for(c = 0; c < C; c++){    
+            // Propagate new gamma into phi/logphi where delta=0 (delta=1 cells were
+            // already updated with a fresh fast_beta draw in the phi/delta block above).
+            for(c = 0; c < C; c++){
                 for(k = 0; k < K; k++){
                     for(j = 0; j < S; j++){
                         if(delta(c, k, j) < 0.5){
-                            phi(c, k, j) = gamma(c, j);
-                            logphi(c, k, j) = log(phi(c, k, j));
-                            log_1_minus_phi(c, k, j) = log(1 - phi(c, k, j));
+                            phi(c, k, j)             = gamma(c, j);
+                            logphi(c, k, j)           = log_gamma_m(c, j);
+                            log_1_minus_phi(c, k, j)  = log_1m_gamma_m(c, j);
                         }
-                        // avoid numerical issue with extreme distribution?
-                        // if(phi(c, k, j) < tol){
-                        //      phi(c, k, j) = tol; 
-                        // }
-                        // if(phi(c, k, j) > 1 - tol){
-                        //      phi(c, k, j) = 1 - tol; 
-                        // }
                     }
                 }
             }
 
-            // // Sample Y0
-            // for(i = 0; i < N_test; i++){
-            //     py.zeros();
-            //    for(c = 0; c < C; c++){
-            //         pz.zeros();
-            //         for(k = 0; k < K; k++){
-            //             for(j = 0; j < S; j++){
-            //                 if(!ISNA(X0(i, j))){
-            //                     pz(k) += log(phi(c, k, j))*X0(i, j);
-            //                     pz(k) += log(1-phi(c, k, j)) * (1-X0(i, j));
-            //                 }
-            //             }
-            //             if(G0(i) < 0){
-            //                pz(k) += lambda_test(c, k);
-            //             }else{
-            //                pz(k) += lambda(c, k, G0(i));
-            //             }
-            //         }
-                    
-            //         py(c) = logsumexp(pz);
-            //         if(G0(i) < 0){
-            //             py(c) += log(pi_test(c));
-            //         }else{
-            //             py(c) += log(pi(c, G0(i)));
-            //         }
-            //     }
-            //     Y0(i) = sample_log_prob(py);
-            // }
-            
             // ------------------------------------------------//
             // Sample pi in test
-            // ------------------------------------------------// 
+            // ------------------------------------------------//
             n_cg.zeros();
-            n_c_test.zeros(); 
+            n_c_test.zeros();
             for(i = 0; i < N_train; i++){
                 n_cg(Y1(i), G1(i))++;
             }
@@ -903,71 +915,25 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
                     n_cg(Y0(i), G0(i))++;
                 }
             }
-            // if(common_pi == 0){
                 for(g = 0; g < G; g++){
                     py.zeros();
                     for(c = 0; c < C; c++){
                         py(c) = alpha_pi + n_cg(c, g);
                     }
                     pi.col(g) = sample_Dirichlet(py);
-                } 
+                }
                 py.zeros();
                 for(c = 0; c < C; c++){
                     py(c) = alpha_pi + n_c_test(c);
                 }
                 pi_test = sample_Dirichlet(py);
-            // }else{
-            //     py.zeros();
-            //     for(c = 0; c < C; c++){
-            //         py(c) = alpha_pi;
-            //         for(g = 0; g < G; g++){
-            //             py(c) += n_cg(c, g);
-            //         }
-            //     } 
-            //     pi.col(0) = sample_Dirichlet(py);
-            //     for(c = 0; c < C; c++){
-            //         for(g = 1; g < G; g++){
-            //           pi(c, g) = pi(c, 0);
-            //         }
-            //         pi_test(c) = pi(c, 0);
-            //     }
-            // }
-
-           
+            // Update log caches after pi sampling
+            for(c = 0; c < C; c++){
+                log_pi_test_v(c) = log(pi_test(c));
+                for(g = 0; g < G; g++) log_pi_m(c, g) = log(pi(c, g));
+            }
 
         }
-
-
-        // // compute log likelihood
-        // for(i = 0; i < N_train; i++){
-        //     py.zeros();
-        //     pyg.zeros();
-        //     tmp = 0;
-        //     for(j = 0; j < S; j++){
-        //         if(!ISNA(X1(i, j))){
-        //             pyg += X1(i, j) * logphi.slice(j) + (1 - X1(i, j)) * log_1_minus_phi.slice(j);
-        //         }
-        //     }
-        //     for(c = 0; c < C; c++){
-        //         for(k = 0; k < K; k++){
-        //             py(c) += exp(lambda(c, k, G1(i)) + pyg(c, k));
-        //         }
-        //         // for(j = 0; j < S; j++){
-        //         //     if(!ISNA(X1(i, j))){
-        //         //         for(k = 0; k < K; k++){
-        //         //             pz(k) += logphi(c, k, j)*X1(i, j);
-        //         //             pz(k) += log_1_minus_phi(c, k, j) * (1-X1(i, j));
-        //         //         }
-        //         //     }
-        //         // }
-        //         // for(k = 0; k < K; k++){
-        //         //     py(c) += exp(pz(k));
-        //         // }
-        //         py(c) *= pi(c, G1(i));
-        //         tmp += py(c);
-        //     }
-        //     loglik(itr_save, i) = log(py(Y1(i))) - log(tmp);
-        // }
 
 
         //  save results
@@ -977,12 +943,12 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
         lambda_out(itrname) = lambda;
         Z1_out.row(itr_save) = Z1.t();
         tau_out.row(itr_save) = tau.t();
-        pi_out.row(itr_save) = pi;   
+        pi_out.row(itr_save) = pi;
         if(N_test > 0){
             Z0_out.row(itr_save) = Z0.t();
             Y0_out.row(itr_save) = Y0.t();
             G_latent_out.row(itr_save) = G_latent.t();
-            pi_test_out.row(itr_save) = pi_test.t();   
+            pi_test_out.row(itr_save) = pi_test.t();
             eta_out.row(itr_save) = eta;
         }
         if(similarity == 0){
@@ -1014,7 +980,7 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
     out("pi") = pi_out;
     out("loglik") = loglik;
     out("config") = config;
-   
+
     if(N_test > 0){
         out("X_test") = X0;
         out("Group_test") = G0 + 1;
@@ -1031,14 +997,11 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
 
 
 
-
-
-
 //' Internal function to predict with the nested latent class model
-//' 
+//'
 //' @param X_test a n by p matrix of the symptoms with 0 being absent, 1 being present, and NA being missing.
-//' @param Y_test a vector of length n of the causes-of-death, coded into 0 to C, where C is the total number of all cause and 0 indicates unknown cause of death.  
-//' @param Group_test a vector of length n of the domain indicators, coded into 0 to G, where G is the total number of all domains and 0 indicates a new target domain. 
+//' @param Y_test a vector of length n of the causes-of-death, coded into 0 to C, where C is the total number of all cause and 0 indicates unknown cause of death.
+//' @param Group_test a vector of length n of the domain indicators, coded into 0 to G, where G is the total number of all domains and 0 indicates a new target domain.
 //' @param config_train a matrix of counts for all domain-cause combinations.
 //' @param N_test number of deaths to assign a cause to.
 //' @param S number of symptoms.
@@ -1047,25 +1010,25 @@ SEXP lcm_fit(SEXP X, SEXP Y, SEXP Group,
 //' @param G number of training domains.
 //' @param itr_draws vector of iteration indices to use from the training posterior draws.
 //' @param alpha_pi_vec vector of the concentration parameters for the target domain CSMF.
-//' @param alpha_eta  concentration parameter for the domain or domain-cause mixture prior. Only used for multi-domain models. 
-//' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.  
-//' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior. 
+//' @param alpha_eta  concentration parameter for the domain or domain-cause mixture prior. Only used for multi-domain models.
+//' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
+//' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
 //' @param lambda_fit posterior draws of the training mix weights.
 //' @param phi_fit posterior draws of the response probabilities.
 //' @param pi_fit posterior draws of the training CSMF.
 //' @param pi_init initial values of the target CSMF.
 //' @param Nitr number of iterations to run in each MCMC chain.
 //' @param similarity shrinkage model for the testing domain mixing weights. Currently not used.
-//' 
+//'
 //' @examples
 //' message("See ?LCVA.pred")
 // [[Rcpp::export]]
 SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
          int N_test, int S, int C, int K, int G, SEXP itr_draws,
-         SEXP alpha_pi_vec, double alpha_eta, double a_omega, double b_omega, 
+         SEXP alpha_pi_vec, double alpha_eta, double a_omega, double b_omega,
          arma::field<arma::cube> lambda_fit, arma::field<arma::cube> phi_fit, arma::cube pi_fit, SEXP pi_init,
          int Nitr, int similarity, int return_x_given_y, int verbose) {
-  
+
     arma::mat X0 = as<mat>(X_test);
     arma::vec Y0 = as<vec>(Y_test);
     arma::vec G0 = as<vec>(Group_test);
@@ -1088,7 +1051,6 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::mat logeta(G, C);
     arma::cube lambda(C, K, G);
     arma::mat eta(G, C);
-    // arma::mat config(G, C);
     arma::mat lambda_test(C, K);
     arma::vec omega_test(C);
     arma::mat V_test(C, K);
@@ -1103,20 +1065,20 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::cube eta_out(Nout, G, C);
     arma::mat pi_test_out(Nout, C);
     arma::cube x_given_y_out(Nout, N_test, C);
-    List lambda_test_out;  
+    List lambda_test_out;
 
     // count arrays
     arma::cube n_ckg(C, K, G);
     arma::cube n_ckj_0(C, K, S);
     arma::cube n_ckj_1(C, K, S);
     arma::mat n_ck(C, K);
-    arma::mat n_cg(C, G); 
+    arma::mat n_cg(C, G);
     arma::mat n0_cj(C, S);
     arma::mat n1_cj(C, S);
 
     arma::mat n_ck_test(C, K);
-    arma::vec n_c_test(C); 
-    arma::mat n_g_latent(G, C); 
+    arma::vec n_c_test(C);
+    arma::mat n_g_latent(G, C);
 
     int itr_save, i, j, c, k, l, g, zy, s, itr_tmp;
     int itr_show = 500;
@@ -1126,8 +1088,8 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
     arma::mat pyg(C, K);
     arma::mat pzg(K, G);
     arma::mat pzyg(C*K, G);
-    // arma::cube px(N_test, C, K);
     arma::vec index2(2);
+    arma::vec pyg_vec(pyg.memptr(), C*K, false, true); // non-owning alias of pyg storage
     arma::vec kcontrib(K);
     double sumV, sumN, sumlambda, lambda_ck;
     double tol = 0.000001;
@@ -1141,7 +1103,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
         }
     }
     // omega_test
-    for(c = 0; c < C; c++) omega_test(c) = Rcpp::rgamma(1, a_omega, 1/b_omega)(0);
+    for(c = 0; c < C; c++) omega_test(c) = fast_gamma(a_omega, 1.0/b_omega);
 
     for(c = 0; c < C; c++){
         for(g = 0; g < G; g++){
@@ -1175,13 +1137,22 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
             }
         }
     }
+    arma::mat X0a_t = X0a.t();   // S x N_test, col i = observation i (stride-1)
+    arma::mat X0b_t = X0b.t();
+
+    // Log caches updated after each pi_test/eta sample
+    arma::vec log_pi_test_v(C);
+    arma::mat log_eta_m(G, C);
+    for(c = 0; c < C; c++){
+        log_pi_test_v(c) = logpi_test(c);  // already log-scaled
+        for(g = 0; g < G; g++) log_eta_m(g, c) = logeta(g, c);
+    }
 
     if(verbose == 1) Rcout << "Start posterior sampling\n";
     for(itr_save = 0; itr_save < Nitr; itr_save ++){
 
         itr_tmp = (itr_save + 1) % itr_show;
         if(itr_tmp == 0 & verbose == 1){
-          // itr_tmp = itr_save * thin;
           Rcout << "Iteration " << itr_save + 1 << " completed.\n";
         }
 
@@ -1200,20 +1171,13 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                 pi(c, g) = pi_fit(i, c, g);
             }
         }
-        // if(common_pi == 1){
-        //     for(c = 0; c < C; c++){
-        //         pi_test(c) = pi_fit(i, c, 0);
-        //     }
-        // }
         // ----------------------------//
         // sample Z and Y0 in testing
         // ---------------------------//
-        // px.zeros();
         n_g_latent.zeros();
         G_latent.zeros();
         n_c_test = n_c_test.zeros();
         n_ck_test = n_ck_test.zeros();
-       
         for(i = 0; i < N_test; i++){
             if(Y0_known(i) == 0){
                 pzyg.zeros();
@@ -1222,17 +1186,16 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     for(c = 0; c < C; c++){
                         for(k = 0; k < K; k++){
                             for(g = 0; g < G; g++){
-                               pzyg(k * C + c, g) += lambda(c, k, g) + logpi_test(c) + logeta(g, c);
+                               pzyg(k * C + c, g) += lambda(c, k, g) + log_pi_test_v(c) + log_eta_m(g, c);
                             }
                         }
                     }
                 }else if(G0(i) < 0 && similarity == 0){
                     for(c = 0; c < C; c++){
                         for(k = 0; k < K; k++){
-                             pzyg(k * C + c, 0) += lambda_test(c, k) + logpi_test(c);
+                             pzyg(k * C + c, 0) += lambda_test(c, k) + log_pi_test_v(c);
                          }
                      }
-                // if data from existing domains, not used for now
                 }else{
                     for(c = 0; c < C; c++){
                         for(k = 0; k < K; k++){
@@ -1241,15 +1204,19 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     }
                 }
                 pyg.zeros();
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X0(i, j))){
-                        pyg += X0(i, j) * logphi.slice(j) + (1 - X0(i, j)) * log_1_minus_phi.slice(j);
+                {
+                    const double* xa = X0a_t.colptr(i);
+                    const double* xb = X0b_t.colptr(i);
+                    for(j = 0; j < S; j++){
+                        if(xa[j] > 0.5){
+                            pyg += logphi.slice(j);
+                        } else if(xb[j] > 0.5){
+                            pyg += log_1_minus_phi.slice(j);
+                        }
                     }
                 }
-                pzyg.each_col() += arma::vectorise(pyg);
-                    
-                
-                
+                pzyg.each_col() += pyg_vec; // pyg_vec is non-owning alias of pyg
+
                 index2.zeros();
                 if(G0(i) < 0 && similarity >= 1){
                     index2 = sample_log_prob_matrix(pzyg);
@@ -1259,21 +1226,16 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     index2(0) = sample_log_prob_matrix_col(pzyg, G0(i));
                 }
 
-                 
+
                 zy = index2(0);
                 Y0(i) = zy % C;
                 Z0(i) = (zy - Y0(i)) / C;
-                // sample latent group membership 
+                // sample latent group membership
                 if(G0(i) < 0 && similarity >= 1){
                     G_latent(i) = index2(1);
                     n_g_latent(G_latent(i), Y0(i)) ++;
                 }
                 if(return_x_given_y){
-                    // First extract the right lambda_{c, k}
-                    // The X|Y probability is 
-                    //    \sum_k lambda_{c, k} * P(X | Y = c, Z = k) 
-                    //  = \sum_k lambda_{c, k} * pyg(c, k)
-                    // in the first case, lambda_{ck} = \sum \lambda_{ckg} * eta(gc)
                     if(G0(i) < 0 && similarity >= 1){
                         for(c = 0; c < C; c++){
                             x_given_y_out(itr_save, i, c) = 0;
@@ -1315,11 +1277,19 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     }
                 }
                 kcontrib.zeros();
-                for(j = 0; j < S; j++){
-                    if(!ISNA(X0(i, j))){
-                        for(k = 0; k < K; k++){
-                            kcontrib(k) += logphi(Y0(i), k, j) * X0(i, j)
-                                         + log_1_minus_phi(Y0(i), k, j) * (1 - X0(i, j));
+                {
+                    const double* xa = X0a_t.colptr(i);
+                    const double* xb = X0b_t.colptr(i);
+                    int ci = (int)Y0(i);
+                    for(j = 0; j < S; j++){
+                        if(xa[j] > 0.5){
+                            for(k = 0; k < K; k++){
+                                kcontrib(k) += logphi(ci, k, j);
+                            }
+                        } else if(xb[j] > 0.5){
+                            for(k = 0; k < K; k++){
+                                kcontrib(k) += log_1_minus_phi(ci, k, j);
+                            }
                         }
                     }
                 }
@@ -1339,7 +1309,7 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                 }
             }
 
- 
+
             if(G0(i) < 0){
                 n_ck_test(Y0(i), Z0(i)) += 1;
                 n_c_test(Y0(i)) += 1;
@@ -1381,6 +1351,9 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     }
                 }
             }
+            // Update log_eta_m cache (logeta already updated above)
+            for(c = 0; c < C; c++)
+                for(g = 0; g < G; g++) log_eta_m(g, c) = logeta(g, c);
             lambda_test.zeros();
             for(c = 0; c < C; c++){
                 for(k = 0; k < K; k++){
@@ -1401,16 +1374,16 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
             for(c = 0; c < C; c++){
                 sumV = 0.0;
                 sumlambda = 0.0;
-                sumN = n_c_test(c); 
+                sumN = n_c_test(c);
                 for(k = 0; k < K - 1; k++){
-                    sumN = sumN - n_ck_test(c, k);  
-                    V_test(c, k) = Rcpp::rbeta(1,  n_ck_test(c, k)+1.0, omega_test(c) + sumN + 0.0)(0);
+                    sumN = sumN - n_ck_test(c, k);
+                    V_test(c, k) = fast_beta(n_ck_test(c, k)+1.0, omega_test(c) + sumN);
                     sumV = sumV + log(1 - V_test(c, k));
                     if(V_test(c, k) < tol){
-                         V_test(c, k) = tol; 
+                         V_test(c, k) = tol;
                     }
                     if(V_test(c, k) > 1 - tol){
-                         V_test(c, k) = 1 - tol; 
+                         V_test(c, k) = 1 - tol;
                     }
                     lambda_test(c, k) = log(V_test(c, k));
                     for(l = 0; l < k; l++){
@@ -1423,19 +1396,18 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                 }else{
                     lambda_test(c, K-1) = log(1 - sumlambda);
                 }
-                omega_test(c) = Rcpp::rgamma(1, a_omega + K - 1, 1/(b_omega - sumV))(0);
+                omega_test(c) = fast_gamma(a_omega + K - 1, 1.0/(b_omega - sumV));
             }
         }
         // ------------------------------------------------//
         // Sample pi in test
-        // ------------------------------------------------// 
-        n_c_test.zeros(); 
+        // ------------------------------------------------//
+        n_c_test.zeros();
         for(i = 0; i < N_test; i++){
             if(G0(i) < 0){
                 n_c_test(Y0(i))++;
             }
         }
-        // if(common_pi == 0){
             py.zeros();
             for(c = 0; c < C; c++){
                 py(c) = alpha_pi(c) + n_c_test(c);
@@ -1443,20 +1415,18 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
             pi_test = sample_Dirichlet(py);
             for(c = 0; c < C; c ++){
                 logpi_test(c) = log(pi_test(c));
+                log_pi_test_v(c) = logpi_test(c);
             }
-        // }
         //  save results
         itrname = "itr" + std::to_string(itr_save);
         if(N_test > 0){
             Z0_out.row(itr_save) = Z0.t();
             Y0_out.row(itr_save) = Y0.t();
             G_latent_out.row(itr_save) = G_latent.t();
-            pi_test_out.row(itr_save) = pi_test.t();   
+            pi_test_out.row(itr_save) = pi_test.t();
             eta_out.row(itr_save) = eta;
         }
-        // if(similarity == 0){
             lambda_test_out(itrname) = lambda_test;
-        // }
 
     }
 
