@@ -19,7 +19,7 @@ Sample from a probability vector
 x <- rep(0, 10000)
 prob <- c(.1, .2, .3, .4)
 for(i in 1:10000){
-  x[i] <- sample_prob(prob) 
+  x[i] <- sample_prob(prob)
 }
 round(table(x) / 10000, 2)
 }

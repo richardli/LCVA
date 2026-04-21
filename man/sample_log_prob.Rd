@@ -18,9 +18,9 @@ Sample from log of unnormalized probability vector
 \examples{
 x <- rep(0, 10000)
 prob <- c(1, 2, 3, 4)
-logprob <- log(prob) 
+logprob <- log(prob)
 for(i in 1:10000){
-  x[i] <- sample_log_prob(logprob) 
+  x[i] <- sample_log_prob(logprob)
 }
 round(table(x) / 10000, 2)
 }

@@ -20,13 +20,13 @@ Sample from a column of the log of unnormalized probability matrix
 \examples{
 x <- rep(0, 10000)
 prob <- cbind(c(1, 2, 3, 4), c(4, 3, 2, 1))
-logprob <- log(prob) 
+logprob <- log(prob)
 for(i in 1:10000){
-  x[i] <- sample_log_prob_matrix_col(logprob, 0) 
+  x[i] <- sample_log_prob_matrix_col(logprob, 0)
 }
 table(x) / 10000
 for(i in 1:10000){
-  x[i] <- sample_log_prob_matrix_col(logprob, 1) 
+  x[i] <- sample_log_prob_matrix_col(logprob, 1)
 }
 round(table(x) / 10000, 2)
 }

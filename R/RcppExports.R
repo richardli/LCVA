@@ -18,13 +18,13 @@ logsumexp <- function(x) {
 #' @examples
 #' x <- rep(0, 10000)
 #' prob <- c(1, 2, 3, 4)
-#' logprob <- log(prob) 
+#' logprob <- log(prob)
 #' for(i in 1:10000){
-#'   x[i] <- sample_log_prob(logprob) 
+#'   x[i] <- sample_log_prob(logprob)
 #' }
 #' round(table(x) / 10000, 2)
 #' @export
-#' 
+#'
 sample_log_prob <- function(x) {
     .Call('_LCVA_sample_log_prob', PACKAGE = 'LCVA', x)
 }
@@ -36,17 +36,17 @@ sample_log_prob <- function(x) {
 #' @examples
 #' x <- rep(0, 10000)
 #' prob <- cbind(c(1, 2, 3, 4), c(4, 3, 2, 1))
-#' logprob <- log(prob) 
+#' logprob <- log(prob)
 #' for(i in 1:10000){
-#'   x[i] <- sample_log_prob_matrix_col(logprob, 0) 
+#'   x[i] <- sample_log_prob_matrix_col(logprob, 0)
 #' }
 #' table(x) / 10000
 #' for(i in 1:10000){
-#'   x[i] <- sample_log_prob_matrix_col(logprob, 1) 
+#'   x[i] <- sample_log_prob_matrix_col(logprob, 1)
 #' }
 #' round(table(x) / 10000, 2)
 #' @export
-#' 
+#'
 sample_log_prob_matrix_col <- function(x, id) {
     .Call('_LCVA_sample_log_prob_matrix_col', PACKAGE = 'LCVA', x, id)
 }
@@ -57,14 +57,14 @@ sample_log_prob_matrix_col <- function(x, id) {
 #' @examples
 #' x <- matrix(0, 10000, 2)
 #' prob <- cbind(c(1, 2, 3, 4), c(4, 3, 2, 1))
-#' logprob <- log(prob) 
+#' logprob <- log(prob)
 #' for(i in 1:10000){
-#'   x[i, ] <- sample_log_prob_matrix(logprob) 
+#'   x[i, ] <- sample_log_prob_matrix(logprob)
 #' }
 #' round(table(paste(x[, 1], x[, 2], sep = "-")) / 10000, 2)
 #' prob / sum(prob)
 #' @export
-#' 
+#'
 sample_log_prob_matrix <- function(x) {
     .Call('_LCVA_sample_log_prob_matrix', PACKAGE = 'LCVA', x)
 }
@@ -76,11 +76,11 @@ sample_log_prob_matrix <- function(x) {
 #' x <- rep(0, 10000)
 #' prob <- c(.1, .2, .3, .4)
 #' for(i in 1:10000){
-#'   x[i] <- sample_prob(prob) 
+#'   x[i] <- sample_prob(prob)
 #' }
 #' round(table(x) / 10000, 2)
 #' @export
-#' 
+#'
 sample_prob <- function(x) {
     .Call('_LCVA_sample_prob', PACKAGE = 'LCVA', x)
 }
@@ -88,35 +88,35 @@ sample_prob <- function(x) {
 #' Sample from the Dirichlet distribution
 #'
 #' @param a vector of Dirichlet concentration parameter
-#' @return a sample from Dirichlet(a).  
+#' @return a sample from Dirichlet(a).
 #' @examples
 #' alpha <- c(1, 2, 3, 4)
 #' x <- matrix(0, 10000, 4)
 #' for(i in 1:10000){
-#'   x[i, ] <- sample_Dirichlet(alpha) 
+#'   x[i, ] <- sample_Dirichlet(alpha)
 #' }
 #' round(apply(x, 2, mean), 2)
 #' @export
-#' 
+#'
 sample_Dirichlet <- function(a) {
     .Call('_LCVA_sample_Dirichlet', PACKAGE = 'LCVA', a)
 }
 
 #' Internal function to fit the nested latent class model on training data
-#' 
+#'
 #' @param X a n by p matrix of the symptoms with 0 being absent, 1 being present, and NA being missing.
 #' @param Y a vector of length n of the causes-of-death, coded into 1 to C, where C is the total number of all cause.
 #' @param Group a vector of length n of the domain indicators, coded into 1 to G, where G is the total number of all domains.
 #' @param X_test currently not used.
 #' @param Y_test currently not used.
 #' @param Group_test currently not used.
-#' @param N_train size of training data, n. 
+#' @param N_train size of training data, n.
 #' @param N_test currently not used.
 #' @param S number of symptoms.
 #' @param C number of causes.
 #' @param K number of latent classes within each cause-of-death.
 #' @param G number of training domains.
-#' @param alpha_pi Concentration parameter for the training domain CSMF prior.  
+#' @param alpha_pi Concentration parameter for the training domain CSMF prior.
 #' @param alpha_eta currently not used.
 #' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
 #' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
@@ -128,7 +128,7 @@ sample_Dirichlet <- function(a) {
 #' @param thin number of draws to sample per one saved.
 #' @param similarity shrinkage model for the testing domain mixing weights. Currently not used.
 #' @param sparse binary indicator of whether to encourage latent profiles to be sparse
-#' 
+#'
 #' @examples
 #' message("See ?LCVA.train")
 lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S, C, K, G, alpha_pi, alpha_eta, a_omega, b_omega, nu_phi, a_gamma, b_gamma, nu_tau, Nitr, thin, similarity, sparse, verbose) {
@@ -136,10 +136,10 @@ lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S,
 }
 
 #' Internal function to predict with the nested latent class model
-#' 
+#'
 #' @param X_test a n by p matrix of the symptoms with 0 being absent, 1 being present, and NA being missing.
-#' @param Y_test a vector of length n of the causes-of-death, coded into 0 to C, where C is the total number of all cause and 0 indicates unknown cause of death.  
-#' @param Group_test a vector of length n of the domain indicators, coded into 0 to G, where G is the total number of all domains and 0 indicates a new target domain. 
+#' @param Y_test a vector of length n of the causes-of-death, coded into 0 to C, where C is the total number of all cause and 0 indicates unknown cause of death.
+#' @param Group_test a vector of length n of the domain indicators, coded into 0 to G, where G is the total number of all domains and 0 indicates a new target domain.
 #' @param config_train a matrix of counts for all domain-cause combinations.
 #' @param N_test number of deaths to assign a cause to.
 #' @param S number of symptoms.
@@ -148,16 +148,16 @@ lcm_fit <- function(X, Y, Group, X_test, Y_test, Group_test, N_train, N_test, S,
 #' @param G number of training domains.
 #' @param itr_draws vector of iteration indices to use from the training posterior draws.
 #' @param alpha_pi_vec vector of the concentration parameters for the target domain CSMF.
-#' @param alpha_eta  concentration parameter for the domain or domain-cause mixture prior. Only used for multi-domain models. 
-#' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.  
-#' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior. 
+#' @param alpha_eta  concentration parameter for the domain or domain-cause mixture prior. Only used for multi-domain models.
+#' @param a_omega Shape parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
+#' @param b_omega Rate parameter of the gamma distribution for the omega_c parameter in the stick-breaking prior.
 #' @param lambda_fit posterior draws of the training mix weights.
 #' @param phi_fit posterior draws of the response probabilities.
 #' @param pi_fit posterior draws of the training CSMF.
 #' @param pi_init initial values of the target CSMF.
 #' @param Nitr number of iterations to run in each MCMC chain.
 #' @param similarity shrinkage model for the testing domain mixing weights. Currently not used.
-#' 
+#'
 #' @examples
 #' message("See ?LCVA.pred")
 lcm_pred <- function(X_test, Y_test, Group_test, config_train, N_test, S, C, K, G, itr_draws, alpha_pi_vec, alpha_eta, a_omega, b_omega, lambda_fit, phi_fit, pi_fit, pi_init, Nitr, similarity, return_x_given_y, verbose) {

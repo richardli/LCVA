@@ -18,9 +18,9 @@ Sample from log of unnormalized probability matrix
 \examples{
 x <- matrix(0, 10000, 2)
 prob <- cbind(c(1, 2, 3, 4), c(4, 3, 2, 1))
-logprob <- log(prob) 
+logprob <- log(prob)
 for(i in 1:10000){
-  x[i, ] <- sample_log_prob_matrix(logprob) 
+  x[i, ] <- sample_log_prob_matrix(logprob)
 }
 round(table(paste(x[, 1], x[, 2], sep = "-")) / 10000, 2)
 prob / sum(prob)

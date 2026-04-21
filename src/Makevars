@@ -1,0 +1,3 @@
+# Suppress "variable set but not used" warnings that originate inside
+# Eigen/Stan template headers and are not actionable from this package.
+PKG_CXXFLAGS += -Wno-unused-but-set-variable

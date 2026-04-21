@@ -19,7 +19,7 @@ Sample from the Dirichlet distribution
 alpha <- c(1, 2, 3, 4)
 x <- matrix(0, 10000, 4)
 for(i in 1:10000){
-  x[i, ] <- sample_Dirichlet(alpha) 
+  x[i, ] <- sample_Dirichlet(alpha)
 }
 round(apply(x, 2, mean), 2)
 }
