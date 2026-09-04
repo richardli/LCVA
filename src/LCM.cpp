@@ -1217,8 +1217,8 @@ SEXP lcm_pred(SEXP X_test, SEXP Y_test, SEXP Group_test, SEXP config_train,
                     if(G0(i) < 0 && similarity >= 1){
                         for(c = 0; c < C; c++){
                             x_given_y_out(itr_save, i, c) = 0;
-                            lambda_ck = 0;
                             for(k = 0; k < K; k++){
+                                lambda_ck = 0;
                                 for(g = 0; g < G; g++){
                                     lambda_ck += exp(lambda(c, k, g) + logeta(g, c));
                                 }
